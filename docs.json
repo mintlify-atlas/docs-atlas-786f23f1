@@ -101,6 +101,12 @@
             "pages": [
               "cli/config-reference"
             ]
+          },
+          {
+            "group": "Advanced Commands",
+            "pages": [
+              "cli/advanced-commands"
+            ]
           }
         ]
       },

@@ -58,48 +58,79 @@ Embedding and chunking configuration.
 
 ### embeddings.embedding_backend
 
-<ParamField path="embeddings.embedding_backend" type="string" default="sentence-transformers">
+<ParamField path="embeddings.embedding_backend" type="string" default="fastembed">
   Embedding backend to use.
   
   **Valid values:**
-  - `sentence-transformers` - Full transformers library (more models)
-  - `fastembed` - Lightweight, optimized for speed
+  - `sentence-transformers` - Full transformers library (GPU/MPS/CPU support)
+  - `fastembed` - Lightweight, optimized for CPU speed (default)
   
   **Validation:** Must be one of these two values.
   
   **Example:**
   ```bash
-  openground config set embeddings.embedding_backend fastembed
+  openground config set embeddings.embedding_backend sentence-transformers
   ```
 </ParamField>
 
-### embeddings.model_name
+### embeddings.embedding_model
 
-<ParamField path="embeddings.model_name" type="string" default="all-MiniLM-L6-v2">
+<ParamField path="embeddings.embedding_model" type="string" default="BAAI/bge-small-en-v1.5">
   Name of the embedding model to use.
   
-  **Sentence-transformers models:**
-  - `all-MiniLM-L6-v2` (default, 384 dimensions)
-  - `all-mpnet-base-v2` (768 dimensions, higher quality)
-  - `multi-qa-MiniLM-L6-cos-v1` (optimized for questions)
+  **Default:** `BAAI/bge-small-en-v1.5` (384 dimensions, optimized for quality/speed balance)
   
-  **FastEmbed models:**
-  - `BAAI/bge-small-en-v1.5` (384 dimensions)
-  - `BAAI/bge-base-en-v1.5` (768 dimensions)
-  - `sentence-transformers/all-MiniLM-L6-v2`
+  **Other models:**
+  - `BAAI/bge-base-en-v1.5` (768 dimensions, higher quality)
+  - `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions, faster)
+  - `all-mpnet-base-v2` (768 dimensions, best quality, sentence-transformers only)
   
   **Note:** Changing this requires re-embedding all libraries.
   
   **Example:**
   ```bash
-  openground config set embeddings.model_name all-mpnet-base-v2
+  openground config set embeddings.embedding_model BAAI/bge-base-en-v1.5
+  ```
+</ParamField>
+
+### embeddings.embedding_dimensions
+
+<ParamField path="embeddings.embedding_dimensions" type="integer" default="384">
+  Dimension of the embedding vectors. Must match the model's output dimensions.
+  
+  **Common dimensions:**
+  - `384` - BAAI/bge-small-en-v1.5 (default), all-MiniLM-L6-v2
+  - `768` - BAAI/bge-base-en-v1.5, all-mpnet-base-v2
+  
+  **Note:** This must match your model's dimensions. Changing this requires re-embedding.
+  
+  **Example:**
+  ```bash
+  openground config set embeddings.embedding_dimensions 768
+  ```
+</ParamField>
+
+### embeddings.batch_size
+
+<ParamField path="embeddings.batch_size" type="integer" default="32">
+  Number of chunks to process in a single batch when generating embeddings.
+  
+  **Trade-offs:**
+  - **Larger batches (64-128):** Faster on GPU, more memory usage
+  - **Smaller batches (8-16):** Lower memory usage, slower processing
+  
+  **Recommended:** 32 for most systems, increase if you have lots of GPU memory
+  
+  **Example:**
+  ```bash
+  openground config set embeddings.batch_size 64
   ```
 </ParamField>
 
 ### embeddings.chunk_size
 
-<ParamField path="embeddings.chunk_size" type="integer" default="512">
-  Maximum size of text chunks (in tokens/characters) for embedding.
+<ParamField path="embeddings.chunk_size" type="integer" default="800">
+  Maximum size of text chunks (in characters) for embedding.
   
   **Trade-offs:**
   - **Smaller chunks (256-512):** More granular, better for specific queries
@@ -115,12 +146,12 @@ Embedding and chunking configuration.
 
 ### embeddings.chunk_overlap
 
-<ParamField path="embeddings.chunk_overlap" type="integer" default="128">
-  Number of overlapping tokens/characters between consecutive chunks.
+<ParamField path="embeddings.chunk_overlap" type="integer" default="200">
+  Number of overlapping characters between consecutive chunks.
   
   **Purpose:** Prevents information loss at chunk boundaries.
   
-  **Recommended:** 20-25% of chunk_size
+  **Recommended:** 20-25% of chunk_size (default is 25% of 800)
   
   **Example:**
   ```bash
@@ -153,7 +184,7 @@ Extraction and scraping configuration.
 
 ### extraction.concurrency_limit
 
-<ParamField path="extraction.concurrency_limit" type="integer" default="10">
+<ParamField path="extraction.concurrency_limit" type="integer" default="50">
   Maximum number of concurrent requests when extracting from sitemaps.
   
   **Trade-offs:**

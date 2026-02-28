@@ -1,0 +1,248 @@
+---
+title: Advanced Commands
+description: Low-level commands for debugging and advanced workflows
+---
+
+# Advanced Commands
+
+These are low-level commands that most users don't need. The `openground add` command handles extraction and embedding automatically. Use these only for debugging or custom workflows.
+
+<Warning>
+These commands are for advanced users. Most users should use `openground add` which handles extraction and embedding in one step.
+</Warning>
+
+## version
+
+Display the installed OpenGround version.
+
+```bash
+openground version
+```
+
+**Output:**
+```
+0.13.0
+```
+
+<Tip>
+Use this to verify your installation or when reporting issues.
+</Tip>
+
+## extract-sitemap
+
+Extract documentation from a sitemap without embedding it.
+
+```bash
+openground extract-sitemap [OPTIONS]
+```
+
+### Options
+
+<ParamField path="--sitemap-url" type="string" required>
+  Root sitemap URL to crawl.
+  
+  **Aliases:** `-s`
+  **Default:** None
+</ParamField>
+
+<ParamField path="--library" type="string">
+  Name of the library/framework for this documentation.
+  
+  **Aliases:** `-l`
+  **Default:** `default`
+</ParamField>
+
+<ParamField path="--filter-keyword" type="string">
+  Keyword filter applied to sitemap URLs. Can be specified multiple times.
+  
+  **Aliases:** `-f`
+  **Example:** `-f docs -f /blog`
+</ParamField>
+
+<ParamField path="--concurrency-limit" type="integer">
+  Maximum number of concurrent requests.
+  
+  **Aliases:** `-c`
+  **Default:** From config (default: 10)
+  **Min:** 1
+</ParamField>
+
+<ParamField path="--trim-query-params" type="boolean">
+  Trim query parameters from sitemap URLs to avoid duplicates.
+  
+  **Default:** `false`
+</ParamField>
+
+### Example
+
+```bash
+openground extract-sitemap \
+  --sitemap-url https://docs.python.org/3/sitemap.xml \
+  --library python \
+  --filter-keyword library
+```
+
+This extracts pages but doesn't embed them. Follow up with `openground embed` to generate embeddings.
+
+## extract-git
+
+Extract documentation from a git repository without embedding it.
+
+```bash
+openground extract-git [OPTIONS]
+```
+
+### Options
+
+<ParamField path="--repo-url" type="string" required>
+  Git repository URL.
+  
+  **Aliases:** `-r`
+</ParamField>
+
+<ParamField path="--docs-path" type="string" required>
+  Path to documentation within the repo. Specify multiple times for multiple paths.
+  
+  **Aliases:** `-d`
+  **Example:** `-d docs/ -d wiki/`
+  **Note:** Use `/` for the whole repo
+</ParamField>
+
+<ParamField path="--library" type="string">
+  Name of the library/framework for this documentation.
+  
+  **Aliases:** `-l`
+  **Default:** `default`
+</ParamField>
+
+<ParamField path="--version" type="string">
+  Version of the library to extract. Corresponds to a git tag.
+  
+  **Aliases:** `-v`
+  **Default:** `latest`
+</ParamField>
+
+### Example
+
+```bash
+openground extract-git \
+  --repo-url https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  --library fastapi \
+  --version 0.115.5
+```
+
+This clones the repo (using sparse checkout), extracts documentation, but doesn't embed it.
+
+## embed
+
+Generate embeddings for extracted documentation and store in LanceDB.
+
+```bash
+openground embed <library> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="library" type="string" required>
+  Library name to embed from raw_data/{library}.
+</ParamField>
+
+### Options
+
+<ParamField path="--version" type="string">
+  Version of the library to embed.
+  
+  **Aliases:** `-v`
+  **Default:** `latest`
+</ParamField>
+
+### Example
+
+```bash
+# First extract
+openground extract-git \
+  --repo-url https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  --library fastapi
+
+# Then embed
+openground embed fastapi --version latest
+```
+
+<Info>
+The `embed` command reads from `~/.openground/raw_data/{library}/{version}/` and generates embeddings using your configured embedding backend.
+</Info>
+
+## Use Cases
+
+### Debugging Extraction Issues
+
+If `openground add` fails during extraction, you can use `extract-sitemap` or `extract-git` to isolate the problem:
+
+```bash
+# Test extraction only
+openground extract-sitemap \
+  --sitemap-url https://problematic-site.com/sitemap.xml \
+  --library test
+
+# Check what was extracted
+openground list-raw-libraries
+
+# If extraction worked, try embedding
+openground embed test
+```
+
+### Re-embedding with Different Settings
+
+If you want to re-embed existing raw data with different embedding settings:
+
+```bash
+# 1. Extract documentation (only needs to be done once)
+openground extract-git \
+  --repo-url https://github.com/user/repo.git \
+  --docs-path docs/ \
+  --library mylib
+
+# 2. Change embedding backend
+openground config set embeddings.embedding_backend fastembed
+
+# 3. Re-embed with new backend
+openground embed mylib
+```
+
+<Warning>
+Changing embedding backends makes existing databases incompatible. You'll need to re-embed all your documentation.
+</Warning>
+
+### Custom Extraction Pipeline
+
+For advanced workflows with custom processing between extraction and embedding:
+
+```bash
+# 1. Extract
+openground extract-sitemap -s https://docs.example.com/sitemap.xml -l mylib
+
+# 2. Custom processing (modify files in ~/.openground/raw_data/mylib/latest/)
+python my_custom_processor.py
+
+# 3. Embed processed data
+openground embed mylib
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="add" icon="plus" href="/cli/add">
+    The recommended command that handles extraction and embedding
+  </Card>
+  <Card title="list-raw-libraries" icon="folder" href="/cli/list">
+    View extracted but not yet embedded libraries
+  </Card>
+  <Card title="Configuration" icon="gear" href="/cli/config">
+    Configure embedding backend and other settings
+  </Card>
+  <Card title="Embedding Backends" icon="microchip" href="/advanced/embedding-backends">
+    Learn about different embedding backends
+  </Card>
+</CardGroup>
