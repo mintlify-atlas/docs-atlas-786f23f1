@@ -1,0 +1,141 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "OpenGround",
+  "projectDescription": "On-device RAG system that extracts documentation from git repos and sitemaps, embeds it for semantic search, and exposes it to AI agents via MCP.",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/sources",
+              "concepts/embeddings",
+              "concepts/search"
+            ]
+          },
+          {
+            "group": "Adding Documentation",
+            "pages": [
+              "guides/add-from-git",
+              "guides/add-from-sitemap",
+              "guides/add-from-local",
+              "guides/sources-files"
+            ]
+          },
+          {
+            "group": "AI Agent Integration",
+            "pages": [
+              "integration/mcp-overview",
+              "integration/claude-code",
+              "integration/cursor",
+              "integration/opencode",
+              "integration/custom-agents"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": [
+              "usage/querying",
+              "usage/updating",
+              "usage/managing-libraries",
+              "usage/configuration"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/embedding-backends",
+              "advanced/gpu-acceleration",
+              "advanced/hybrid-search"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/add",
+              "cli/update",
+              "cli/query",
+              "cli/list",
+              "cli/remove",
+              "cli/install-mcp",
+              "cli/config",
+              "cli/stats",
+              "cli/nuke"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "cli/config-reference"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "MCP Server",
+        "groups": [
+          {
+            "group": "Tools",
+            "pages": [
+              "mcp/search-documents",
+              "mcp/list-libraries",
+              "mcp/get-full-content"
+            ]
+          },
+          {
+            "group": "Setup",
+            "pages": [
+              "mcp/installation",
+              "mcp/configuration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Extract documentation from git repos, sitemaps, and local directories",
+    "Local embedding using sentence-transformers or fastembed with GPU/CPU support",
+    "Hybrid vector similarity and BM25 full-text search with LanceDB",
+    "MCP server for seamless integration with AI coding agents",
+    "Multi-version support for libraries",
+    "Incremental updates with content hash detection",
+    "Sources file system for easy library management",
+    "Support for .md, .rst, .txt, .mdx, .ipynb, .html files"
+  ],
+  "publicApiSurface": [
+    "openground add - Add documentation from git/sitemap/local path",
+    "openground update - Update existing library documentation",
+    "openground query - Search documentation with hybrid search",
+    "openground list - List available libraries and versions",
+    "openground remove - Remove library version from database",
+    "openground install-mcp - Install MCP server for AI agents",
+    "openground config - Manage configuration settings",
+    "openground stats - View usage statistics",
+    "openground nuke - Delete all data",
+    "openground-mcp - MCP server entry point",
+    "search_documents_tool - MCP tool for semantic search",
+    "list_libraries_tool - MCP tool to list available docs",
+    "get_full_content_tool - MCP tool to retrieve full page content"
+  ]
+}
