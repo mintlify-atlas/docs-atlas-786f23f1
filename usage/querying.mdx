@@ -1,0 +1,200 @@
+---
+title: Querying Documentation
+description: Learn how to search your documentation libraries using OpenGround's hybrid search
+---
+
+OpenGround provides powerful hybrid search capabilities that combine semantic search (embeddings) with BM25 text matching to find the most relevant documentation.
+
+## CLI Query Command
+
+Use the `query` command to search your documentation from the command line:
+
+```bash
+openground query "How do I configure embeddings?"
+```
+
+### Query Options
+
+<ParamField path="query" type="string" required>
+  The search query string
+</ParamField>
+
+<ParamField path="--library" type="string">
+  Filter results to a specific library (e.g., `--library openground`)
+</ParamField>
+
+<ParamField path="--version" type="string" default="latest">
+  Filter results by version (e.g., `--version v1.0.0`)
+</ParamField>
+
+<ParamField path="--top-k" type="integer" default="5">
+  Number of results to return (can be overridden from config)
+</ParamField>
+
+### Examples
+
+```bash
+# Basic query
+openground query "How to add a library"
+
+# Query specific library
+openground query "API reference" --library react
+
+# Query specific version
+openground query "migration guide" --version v2.0.0
+
+# Get more results
+openground query "configuration options" --top-k 10
+
+# Combine filters
+openground query "deployment" --library nextjs --version latest --top-k 5
+```
+
+## Query Results Format
+
+Query results are returned in a structured markdown format:
+
+```
+Found 3 matches.
+1. **Getting Started**: "OpenGround is a CLI for storing and querying..." (Source: https://docs.openground.ai/getting-started, Version: latest, score=0.8542)
+   To get full page content: {"tool": "get_full_content", "url": "https://docs.openground.ai/getting-started", "version": "latest"}
+2. **Configuration**: "Configure OpenGround using the config command..." (Source: https://docs.openground.ai/config, Version: latest, score=0.7821)
+   To get full page content: {"tool": "get_full_content", "url": "https://docs.openground.ai/config", "version": "latest"}
+3. **CLI Reference**: "The openground CLI provides commands for..." (Source: https://docs.openground.ai/cli, Version: latest, score=0.7156)
+   To get full page content: {"tool": "get_full_content", "url": "https://docs.openground.ai/cli", "version": "latest"}
+```
+
+Each result includes:
+- **Title**: The page title
+- **Snippet**: Relevant content chunk
+- **Source**: Original URL
+- **Version**: Library version
+- **Score**: Relevance score (lower is better for distance-based metrics)
+- **Tool hint**: JSON payload for fetching full content (useful for MCP integration)
+
+## Programmatic Query (Python)
+
+You can also query from Python code:
+
+```python
+from pathlib import Path
+from openground.query import search
+
+# Basic search
+results = search(
+    query="How to configure embeddings",
+    version="latest",
+    db_path=Path.home() / ".local/share/openground/lancedb",
+    table_name="documents",
+    top_k=5
+)
+print(results)
+
+# Search specific library
+results = search(
+    query="API reference",
+    version="latest",
+    library_name="react",
+    db_path=Path.home() / ".local/share/openground/lancedb",
+    table_name="documents",
+    top_k=10
+)
+print(results)
+```
+
+### Search Parameters
+
+- `query` (str): Search query text
+- `version` (str): Version filter (required)
+- `db_path` (Path): Path to LanceDB database (default: `~/.local/share/openground/lancedb`)
+- `table_name` (str): LanceDB table name (default: `"documents"`)
+- `library_name` (str, optional): Filter by library name
+- `top_k` (int): Number of results to return (default: 10)
+- `show_progress` (bool): Show embedding progress bar (default: True)
+
+## Getting Full Page Content
+
+To retrieve the complete content of a specific page:
+
+```python
+from pathlib import Path
+from openground.query import get_full_content
+
+content = get_full_content(
+    url="https://docs.openground.ai/getting-started",
+    version="latest",
+    db_path=Path.home() / ".local/share/openground/lancedb",
+    table_name="documents"
+)
+print(content)
+```
+
+Returns formatted markdown:
+
+```markdown
+# Getting Started
+
+Source: https://docs.openground.ai/getting-started
+Version: latest
+
+[Full page content assembled from all chunks...]
+```
+
+## Hybrid Search Explained
+
+OpenGround uses **hybrid search** that combines:
+
+1. **Semantic Search**: Uses embeddings (384-dimensional vectors by default) to find conceptually similar content
+2. **BM25 Text Search**: Traditional keyword-based search for exact matches
+
+This combination provides better results than either method alone, especially for:
+- Technical documentation with specific terminology
+- Conceptual queries that need semantic understanding
+- Mixed queries combining exact terms and concepts
+
+<Accordion title="What embedding model is used?">
+  By default, OpenGround uses `BAAI/bge-small-en-v1.5` which produces 384-dimensional embeddings. You can configure a different model in your config file using `openground config set embeddings.embedding_model "model-name"`.
+</Accordion>
+
+<Accordion title="How is relevance scored?">
+  LanceDB's hybrid search combines vector similarity (using distance metrics) with BM25 scores. Lower distance scores indicate higher relevance. The exact scoring algorithm is managed by LanceDB's query engine.
+</Accordion>
+
+<Accordion title="Can I search across all versions?">
+  Currently, queries require a version filter. To search all versions, you would need to run multiple queries with different version values. This is by design to ensure version-specific accuracy.
+</Accordion>
+
+<Accordion title="What if no results are found?">
+  The query will return `"Found 0 matches."` This could mean:
+  - The library/version doesn't exist in your database
+  - No content matches your query
+  - The embedding model doesn't have sufficient context
+  
+  Try using `openground list-libraries` to verify what's available.
+</Accordion>
+
+## Query Performance Tips
+
+<Tip>
+  **First query is slower**: The first query loads the embedding model into memory. Subsequent queries are much faster.
+</Tip>
+
+<Warning>
+  **Embedding backend matters**: The default `fastembed` backend is faster than `sentence-transformers`. Configure with `openground config set embeddings.embedding_backend "fastembed"`.
+</Warning>
+
+- Keep `top_k` reasonable (5-10) for faster results
+- Use library filters when you know the source
+- Be specific in your queries for better semantic matching
+- Use version filters to narrow results
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/usage/configuration">
+    Customize query settings and top_k defaults
+  </Card>
+  <Card title="Managing Libraries" icon="books" href="/usage/managing-libraries">
+    List and remove libraries from your database
+  </Card>
+</CardGroup>

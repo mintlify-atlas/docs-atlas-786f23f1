@@ -1,0 +1,338 @@
+---
+title: Updating Libraries
+description: Keep your documentation up-to-date with incremental updates
+---
+
+OpenGround supports efficient incremental updates that only process changed pages, saving time and resources when refreshing documentation.
+
+## Update Command
+
+The `update` command re-extracts documentation from a source and intelligently updates only what has changed:
+
+```bash
+openground update <library-name>
+```
+
+### How It Works
+
+1. **Extract**: Fetches latest documentation from the source
+2. **Compare**: Computes content hashes to detect changes
+3. **Diff**: Identifies new, modified, deleted, and unchanged pages
+4. **Update**: Only re-embeds changed pages
+5. **Sync**: Updates both raw data and LanceDB
+
+### Update Options
+
+<ParamField path="library" type="string" required>
+  Name of the library to update
+</ParamField>
+
+<ParamField path="--version" type="string" default="latest">
+  Version to update (default: latest)
+</ParamField>
+
+<ParamField path="--source" type="string">
+  Override the source URL from sources.json
+</ParamField>
+
+<ParamField path="--yes" type="boolean">
+  Skip confirmation prompts
+</ParamField>
+
+## Update Examples
+
+### Update from Configured Source
+
+If the library is already in your `sources.json` or `~/.openground/sources.json`:
+
+```bash
+# Update using configured source
+openground update react
+
+# Update specific version
+openground update react --version v18.0.0
+
+# Skip confirmation
+openground update react --yes
+```
+
+### Update with Source Override
+
+Override the configured source:
+
+```bash
+# Override sitemap URL
+openground update mylib --source https://docs.example.com/sitemap.xml
+
+# Override git repository
+openground update mylib --source https://github.com/user/repo.git
+```
+
+## Update Process Details
+
+### Content Hash Comparison
+
+OpenGround computes SHA-256 hashes of page content to detect changes:
+
+```python
+# From update.py:27
+def compute_content_hash(content: str) -> str:
+    """Compute SHA-256 hash of content."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+```
+
+### Update Summary
+
+After updating, you'll see a summary:
+
+```
+Extraction complete: 245 pages extracted to ~/.local/share/openground/raw_data/react/latest
+
+Update Summary:
+  Added: 5 pages
+  Modified: 12 pages
+  Deleted: 2 pages
+  Unchanged: 226 pages
+
+Update complete: react (latest) updated.
+```
+
+<Accordion title="What happens to deleted pages?">
+  Pages that no longer exist in the source are:
+  1. Removed from LanceDB (all chunks deleted)
+  2. Removed from raw data directory (JSON files deleted)
+  
+  This ensures your database stays in sync with the source.
+</Accordion>
+
+<Accordion title="What happens to modified pages?">
+  Modified pages are:
+  1. Deleted from LanceDB (old chunks removed)
+  2. Re-chunked and re-embedded
+  3. Inserted into LanceDB with new embeddings
+  4. Overwritten in raw data directory
+  
+  This ensures embeddings reflect current content.
+</Accordion>
+
+<Accordion title="What if no changes are detected?">
+  If all pages are unchanged, OpenGround skips the embedding step:
+  
+  ```
+  Update Summary:
+    Added: 0 pages
+    Modified: 0 pages
+    Deleted: 0 pages
+    Unchanged: 245 pages
+  
+  No changes detected. Nothing to update.
+  ```
+</Accordion>
+
+## Incremental Update Benefits
+
+<CardGroup cols={2}>
+  <Card title="⚡ Faster" icon="bolt">
+    Only re-embeds changed pages instead of the entire library
+  </Card>
+  <Card title="💾 Efficient" icon="hard-drive">
+    Saves disk I/O and embedding API costs
+  </Card>
+  <Card title="🔄 Reliable" icon="rotate">
+    Hash-based comparison ensures accurate change detection
+  </Card>
+  <Card title="🎯 Precise" icon="bullseye">
+    Maintains version consistency across raw data and embeddings
+  </Card>
+</CardGroup>
+
+## Update vs Add
+
+<Note>
+  The `update` command is actually an alias for `add`. When you run `add` on an existing library, OpenGround automatically detects it and performs an incremental update.
+</Note>
+
+```bash
+# These are equivalent for existing libraries:
+openground update react
+openground add react
+
+# Both perform incremental updates
+# 'update' is just more explicit about intent
+```
+
+## Update Workflow Example
+
+Complete workflow for keeping a library up-to-date:
+
+```bash
+# 1. Check current version
+openground list-libraries
+
+# 2. Update the library
+openground update nextjs --yes
+
+# 3. Verify changes with a query
+openground query "latest features" --library nextjs
+
+# 4. Check stats (optional)
+openground stats show
+```
+
+## Local Path Updates
+
+For local documentation sources, updates use date-based versions:
+
+```bash
+# Initial add creates version: local-2026-02-28
+openground add mydocs --source ~/projects/docs
+
+# Later update creates new version: local-2026-03-15
+openground update mydocs --source ~/projects/docs
+```
+
+<Warning>
+  Local path sources always create new date-based versions on update. This is by design to preserve history. Old versions are not automatically deleted.
+</Warning>
+
+## Update from Git Repositories
+
+When updating from git sources, specify the version tag:
+
+```bash
+# Update to latest main/master
+openground update pytorch --source https://github.com/pytorch/pytorch.git
+
+# Update to specific version
+openground update pytorch --source https://github.com/pytorch/pytorch.git --version v2.0.0
+```
+
+<Accordion title="How does version detection work for git repos?">
+  For git repositories:
+  - Default version is `"latest"` (latest commit on default branch)
+  - Use `--version` to specify a git tag or branch
+  - The version corresponds to git refs (tags/branches)
+  
+  ```bash
+  # These work:
+  --version v1.0.0      # git tag
+  --version main        # branch name
+  --version latest      # default branch HEAD
+  ```
+</Accordion>
+
+## Programmatic Updates
+
+You can trigger updates from Python code:
+
+```python
+from pathlib import Path
+from openground.update import perform_update
+from openground.ingest import load_parsed_pages
+
+# Load newly extracted pages
+raw_data_dir = Path.home() / ".local/share/openground/raw_data/react/latest"
+pages = load_parsed_pages(raw_data_dir)
+
+# Perform update
+summary = perform_update(
+    extracted_pages=pages,
+    library_name="react",
+    version="latest",
+    db_path=Path.home() / ".local/share/openground/lancedb",
+    table_name="documents",
+    raw_data_dir=raw_data_dir
+)
+
+print(f"Added: {summary['added']}")
+print(f"Modified: {summary['modified']}")
+print(f"Deleted: {summary['deleted']}")
+print(f"Unchanged: {summary['unchanged']}")
+```
+
+## Update Best Practices
+
+<Steps>
+  <Step title="Schedule Regular Updates">
+    Set up cron jobs or scheduled tasks to update frequently-changing documentation:
+    
+    ```bash
+    # Daily update at 2 AM
+    0 2 * * * /usr/local/bin/openground update react --yes
+    ```
+  </Step>
+  
+  <Step title="Version Your Documentation">
+    For production use, maintain version-specific libraries:
+    
+    ```bash
+    openground add react --version v18.0.0
+    openground add react --version v18.1.0
+    ```
+  </Step>
+  
+  <Step title="Monitor Changes">
+    Review update summaries to track documentation evolution:
+    
+    ```bash
+    openground update mylib --yes | tee update-log.txt
+    ```
+  </Step>
+  
+  <Step title="Test After Updates">
+    Verify quality with test queries:
+    
+    ```bash
+    openground query "installation" --library mylib
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting Updates
+
+<Accordion title="Update shows 0 changes but I know content changed">
+  Possible causes:
+  - Source returned cached content (try again later)
+  - Only metadata changed (not detected in content hash)
+  - Extraction filters excluded changed pages
+  
+  Solution: Delete and re-add the library for a fresh start:
+  ```bash
+  openground remove mylib --version latest --yes
+  openground add mylib
+  ```
+</Accordion>
+
+<Accordion title="Update fails with 'produced no pages' error">
+  This means extraction returned 0 pages. Check:
+  - Source URL is accessible
+  - Filter keywords aren't too restrictive
+  - Git repo has content in docs_paths
+  
+  Test extraction separately:
+  ```bash
+  openground extract-sitemap --sitemap-url https://example.com/sitemap.xml
+  ```
+</Accordion>
+
+<Accordion title="Raw data exists but not in LanceDB">
+  OpenGround detects this and cleans up automatically:
+  
+  ```
+  Found stale raw data files for 'mylib' version 'latest' 
+  that are not in LanceDB. Cleaning up...
+  ```
+  
+  This happens if embedding was interrupted. The update will start fresh.
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Managing Libraries" icon="list" href="/usage/managing-libraries">
+    List, remove, and view library statistics
+  </Card>
+  <Card title="Configuration" icon="gear" href="/usage/configuration">
+    Configure automatic source tracking and update settings
+  </Card>
+</CardGroup>

@@ -1,0 +1,292 @@
+---
+title: GPU Acceleration
+description: Configuring GPU support for faster embedding generation
+---
+
+OpenGround can leverage NVIDIA GPUs to significantly speed up embedding generation. This guide covers GPU detection, setup, and optimization.
+
+## Quick Start
+
+If you have an NVIDIA GPU:
+
+```bash
+uv tool install 'openground[fastembed-gpu]'
+```
+
+OpenGround will automatically detect your GPU and provide recommendations if the setup is incomplete.
+
+## GPU Detection
+
+OpenGround performs automatic GPU hardware detection using two methods (`embeddings.py:28-41`):
+
+```python
+def is_gpu_hardware_available() -> bool:
+    """Check if NVIDIA GPU hardware is detected on the system."""
+    try:
+        # Method 1: Try nvidia-smi command
+        subprocess.run(["nvidia-smi"], capture_output=True, check=True, timeout=5)
+        return True
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
+        # Method 2: Fallback for Linux - check device file
+        if sys.platform != "win32" and os.path.exists("/dev/nvidia0"):
+            return True
+    return False
+```
+
+This function:
+1. First attempts to run `nvidia-smi` (NVIDIA System Management Interface)
+2. On Linux, falls back to checking for `/dev/nvidia0` device file
+3. Returns `True` only if GPU hardware is detected
+
+## Compatibility Checking
+
+OpenGround performs comprehensive compatibility checking on startup (`embeddings.py:44-91`):
+
+```python
+def check_gpu_compatibility() -> None:
+    """Check for GPU compatibility and provide optimization tips or warnings."""
+    gpu_hardware = is_gpu_hardware_available()
+    
+    # Check if fastembed-gpu is installed
+    has_gpu_pkg = False
+    try:
+        version("fastembed-gpu")
+        has_gpu_pkg = True
+    except PackageNotFoundError:
+        pass
+    
+    # Check for functional GPU via onnxruntime
+    functional_gpu = False
+    try:
+        import onnxruntime as ort
+        functional_gpu = "CUDAExecutionProvider" in ort.get_available_providers()
+    except ImportError:
+        pass
+```
+
+This checks three critical conditions:
+1. **GPU Hardware:** Is an NVIDIA GPU physically present?
+2. **GPU Package:** Is `fastembed-gpu` installed?
+3. **Functional GPU:** Is CUDA properly configured in onnxruntime?
+
+## Compatibility Scenarios
+
+### Scenario 1: GPU Detected, No GPU Package
+
+```
+GPU detected! Install the GPU version for faster performance:
+   uv tool install 'openground[fastembed-gpu]'
+```
+
+You have GPU hardware but are using the CPU version. Install the GPU package for better performance.
+
+### Scenario 2: GPU Package, No GPU Hardware
+
+```
+Warning: openground[fastembed-gpu] is installed but no NVIDIA GPU was detected.
+   You may want to switch to the CPU version:
+   uv tool install 'openground[fastembed]'
+```
+
+You installed the GPU version but don't have GPU hardware. Switch to CPU version to avoid unnecessary dependencies.
+
+### Scenario 3: GPU Package + Hardware, But CUDA Non-Functional
+
+```
+Error: GPU package is installed but CUDA is not functional. Your options are:
+  1. Ensure your CUDA drivers and cuDNN match the requirements for onnxruntime-gpu.
+   See: https://oliviajain.github.io/onnxruntime/docs/execution-providers/CUDA-ExecutionProvider.html
+
+  2. Install the CPU version: uv tool install 'openground[fastembed]'
+  3. If you still want gpu performance, you can install the more bulky
+     sentence-transformers backend: uv tool install 'openground[sentence-transformers]'
+```
+
+This is the most complex scenario - GPU hardware and package are present, but CUDA isn't properly configured.
+
+## Fastembed GPU Implementation
+
+Fastembed uses ONNX Runtime's CUDA execution provider (`embeddings.py:93-116`):
+
+```python
+@lru_cache(maxsize=1)
+def get_fastembed_model(model_name: str, use_cuda: bool = True):
+    """Get a cached instance of TextEmbedding (fastembed)."""
+    from fastembed import TextEmbedding
+    
+    if use_cuda:
+        try:
+            return TextEmbedding(
+                model_name=model_name,
+                providers=["CUDAExecutionProvider"],  # GPU execution
+            )
+        except ValueError:
+            check_gpu_compatibility()  # Show helpful error messages
+    
+    # Fallback to CPU
+    return TextEmbedding(
+        model_name=model_name,
+        providers=["CPUExecutionProvider"],
+    )
+```
+
+Key points:
+- Uses `CUDAExecutionProvider` for GPU acceleration
+- Automatically falls back to CPU if GPU initialization fails
+- Calls `check_gpu_compatibility()` on failure to show helpful diagnostics
+
+## CUDA Setup Requirements
+
+### Prerequisites
+
+1. **NVIDIA GPU** (compute capability 3.5 or higher)
+2. **NVIDIA Driver** (compatible with your GPU)
+3. **CUDA Toolkit** (version compatible with onnxruntime-gpu)
+4. **cuDNN** (version compatible with onnxruntime-gpu)
+
+### Checking Your Setup
+
+```bash
+# Check GPU and driver version
+nvidia-smi
+
+# Check CUDA version
+nvcc --version
+
+# Check if onnxruntime can see CUDA
+python -c "import onnxruntime as ort; print(ort.get_available_providers())"
+```
+
+You should see `CUDAExecutionProvider` in the list of providers.
+
+### Version Compatibility
+
+<Warning>
+ONNX Runtime requires specific CUDA and cuDNN versions. Check the [CUDA Execution Provider documentation](https://oliviajain.github.io/onnxruntime/docs/execution-providers/CUDA-ExecutionProvider.html) for compatibility matrix.
+</Warning>
+
+Common compatible versions:
+- ONNX Runtime 1.16+: CUDA 11.8 or 12.x, cuDNN 8.x
+- ONNX Runtime 1.15: CUDA 11.6/11.7, cuDNN 8.x
+
+## Sentence-Transformers GPU Support
+
+Sentence-transformers has broader GPU compatibility since it uses PyTorch:
+
+```bash
+uv tool install 'openground[sentence-transformers]'
+```
+
+PyTorch will automatically use CUDA if available. Check with:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available())"
+```
+
+## Performance Optimization
+
+### Batch Size Tuning
+
+GPUs benefit from larger batch sizes:
+
+```yaml
+embeddings:
+  batch_size: 128  # Increase for GPU (default: 32)
+```
+
+**Recommendations:**
+- CPU: 16-32
+- GPU (8GB VRAM): 64-128
+- GPU (16GB+ VRAM): 128-256
+
+### Memory Considerations
+
+GPU memory usage depends on:
+- **Model size:** Larger embedding models need more VRAM
+- **Batch size:** Larger batches need more VRAM
+- **Sequence length:** Longer documents need more VRAM
+
+If you encounter out-of-memory errors:
+1. Reduce `batch_size`
+2. Use a smaller embedding model
+3. Chunk documents into smaller pieces
+
+### Performance Comparison
+
+Typical speedups with GPU acceleration:
+
+| Setup | Speed (docs/sec) | Relative |
+|-------|------------------|----------|
+| CPU (8 cores) | ~50-100 | 1x |
+| GPU (fastembed) | ~500-1000 | 10x |
+| GPU (sentence-transformers) | ~800-1500 | 15x |
+
+<Note>
+Actual performance varies based on hardware, model size, document length, and batch size.
+</Note>
+
+## Troubleshooting
+
+### "CUDAExecutionProvider not available"
+
+**Cause:** onnxruntime-gpu is not properly installed or CUDA is misconfigured
+
+**Solutions:**
+1. Verify CUDA installation: `nvidia-smi`
+2. Reinstall onnxruntime-gpu: `pip install --force-reinstall onnxruntime-gpu`
+3. Check CUDA version compatibility
+4. Install matching cuDNN version
+
+### "CUDA out of memory"
+
+**Cause:** Batch size or model too large for GPU VRAM
+
+**Solutions:**
+1. Reduce `batch_size` in config
+2. Use a smaller embedding model
+3. Close other GPU-intensive applications
+
+### "GPU not detected"
+
+**Cause:** nvidia-smi not found or GPU driver issue
+
+**Solutions:**
+1. Install/update NVIDIA drivers
+2. Verify GPU is recognized: `lspci | grep -i nvidia`
+3. Check if GPU is enabled in BIOS/UEFI
+
+### Slow Performance Despite GPU
+
+**Causes:**
+- Batch size too small (GPU underutilized)
+- Data transfer bottleneck
+- CPU preprocessing overhead
+
+**Solutions:**
+1. Increase batch size gradually
+2. Profile with `nvidia-smi dmon` during indexing
+3. Ensure SSD storage for faster I/O
+
+## Environment Variables
+
+Useful CUDA-related environment variables:
+
+```bash
+# Limit GPU memory growth
+export TF_FORCE_GPU_ALLOW_GROWTH=true
+
+# Select specific GPU (if multiple GPUs)
+export CUDA_VISIBLE_DEVICES=0
+
+# Enable CUDA logging
+export ORT_CUDA_VERBOSE=1
+```
+
+## Next Steps
+
+- Learn about [Embedding Backends](/advanced/embedding-backends) to choose between fastembed and sentence-transformers
+- Explore [Hybrid Search](/advanced/hybrid-search) to understand how embeddings are used in queries

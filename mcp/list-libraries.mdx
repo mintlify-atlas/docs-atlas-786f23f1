@@ -1,0 +1,270 @@
+---
+title: list_libraries_tool
+description: Retrieve available documentation libraries and their versions
+---
+
+## Overview
+
+The `list_libraries_tool` returns a dictionary of all available documentation libraries in the OpenGround database, along with their available versions. This tool should be called before performing searches to verify which libraries and versions are available.
+
+<Tip>
+This tool uses aggressive caching. Results are computed once at server startup and cached for the lifetime of the MCP server process.
+</Tip>
+
+## Parameters
+
+This tool takes no parameters.
+
+## Return Format
+
+Returns a `dict[str, list[str]]` mapping library names to sorted lists of available versions.
+
+### Structure
+
+```json
+{
+  "library_name_1": ["version_1", "version_2", "version_3"],
+  "library_name_2": ["version_1", "version_2"],
+  "library_name_3": ["version_1"]
+}
+```
+
+### Ordering
+
+- **Library names**: Sorted alphabetically
+- **Versions**: Sorted alphabetically (not semantically versioned)
+
+<Note>
+Version sorting is alphabetical, not semantic. So "10.0.0" may appear before "2.0.0". The actual version strings depend on how they were stored during library ingestion.
+</Note>
+
+## Response Fields
+
+<ResponseField name="[library_name]" type="array<string>">
+  Array of version strings available for this library. Each version represents a complete snapshot of the documentation at that version.
+  
+  **Example:** `["0.104.0", "0.109.0", "latest"]`
+</ResponseField>
+
+## Example Usage
+
+### Basic Call
+
+```json
+{}
+```
+
+**Response:**
+```json
+{
+  "django": ["4.2", "5.0", "latest"],
+  "fastapi": ["0.104.0", "0.109.0", "latest"],
+  "flask": ["2.3.0", "3.0.0"],
+  "numpy": ["1.24.0", "1.25.0", "1.26.0"],
+  "react": ["18.0.0", "18.2.0"],
+  "vue": ["3.3.0", "3.4.0"]
+}
+```
+
+### Empty Database
+
+If no libraries have been added yet:
+
+```json
+{}
+```
+
+## How It Works
+
+### Metadata Query
+
+The tool executes an efficient database query:
+
+1. Selects distinct `library_name` and `version` pairs from the documents table
+2. Groups results by library name
+3. Sorts versions within each library
+4. Caches the complete result set
+
+### Caching Strategy
+
+<Info>
+**Pre-loading during server startup:**
+
+The MCP server pre-loads library metadata in a background thread during initialization. This means:
+- First call may be instant (if pre-loading completed)
+- Subsequent calls are always instant (served from cache)
+- Cache persists for the server's lifetime
+</Info>
+
+### Cache Location
+
+The cache is in-memory only:
+- **Module-level cache**: `_metadata_cache` in `query.py`
+- **Lifetime**: Entire server process
+- **Invalidation**: Only on server restart
+- **Size**: Negligible (typically < 10KB even for hundreds of libraries)
+
+## Integration Patterns
+
+### Verify Before Search
+
+```python
+# Step 1: Get available libraries
+libraries = list_libraries_tool()
+
+# Step 2: Check if target exists
+if "fastapi" in libraries and "0.104.0" in libraries["fastapi"]:
+    # Step 3: Perform search
+    results = search_documents_tool(
+        query="authentication middleware",
+        library_name="fastapi",
+        version="0.104.0"
+    )
+else:
+    # Handle missing library/version
+    print("FastAPI 0.104.0 documentation not available")
+```
+
+### Present Version Selection
+
+```python
+libraries = list_libraries_tool()
+
+if "react" in libraries:
+    available_versions = libraries["react"]
+    print(f"Available React versions: {', '.join(available_versions)}")
+    
+    # Let user or agent choose
+    selected_version = available_versions[-1]  # e.g., pick latest in list
+    
+    results = search_documents_tool(
+        query="useState hook",
+        library_name="react",
+        version=selected_version
+    )
+```
+
+### Suggest Library Addition
+
+```python
+libraries = list_libraries_tool()
+
+if "pytorch" not in libraries:
+    print("PyTorch documentation is not available.")
+    print("Would you like to add it? Run:")
+    print("  openground add pytorch --version 2.0.0")
+```
+
+## Typical Response Examples
+
+### Small Installation
+
+```json
+{
+  "fastapi": ["latest"],
+  "python": ["3.11"]
+}
+```
+
+### Production Setup
+
+```json
+{
+  "django": ["3.2", "4.0", "4.1", "4.2", "5.0"],
+  "fastapi": ["0.100.0", "0.104.0", "0.109.0"],
+  "flask": ["2.3.0", "3.0.0"],
+  "langchain": ["0.1.0", "latest"],
+  "nextjs": ["13.0.0", "14.0.0"],
+  "numpy": ["1.24.0", "1.25.0", "1.26.0"],
+  "pandas": ["2.0.0", "2.1.0"],
+  "pytorch": ["2.0.0", "2.1.0"],
+  "react": ["18.0.0", "18.2.0"],
+  "typescript": ["5.0", "5.1", "5.2"],
+  "vue": ["3.3.0", "3.4.0"]
+}
+```
+
+## Best Practices
+
+<Tip>
+**Call this tool at conversation start:**
+
+When a user mentions a library, immediately call `list_libraries_tool` to:
+1. Verify the library exists
+2. Show available versions
+3. Let user/agent choose the appropriate version
+</Tip>
+
+### Version Selection Strategy
+
+When multiple versions exist:
+
+1. **Ask the user** which version they're using
+2. **Default to "latest"** if available
+3. **Pick newest** version string (be careful with alphabetical sorting)
+4. **Match user's environment** if you know their setup
+
+### Error Handling
+
+```python
+libraries = list_libraries_tool()
+
+if not libraries:
+    # Database is empty or not initialized
+    print("No documentation libraries installed.")
+    print("Add libraries using: openground add <library>")
+    exit(1)
+
+if target_library not in libraries:
+    suggestions = [lib for lib in libraries if target_library.lower() in lib.lower()]
+    if suggestions:
+        print(f"Did you mean: {', '.join(suggestions)}?")
+    else:
+        print(f"Available libraries: {', '.join(libraries.keys())}")
+```
+
+## Performance Characteristics
+
+### First Call
+- **Cold start** (no cache): 100-500ms depending on database size
+- **Warm start** (pre-loaded): < 1ms
+
+### Subsequent Calls
+- **Always**: < 1ms (served from memory)
+
+### Database Size Impact
+
+| Document Count | Libraries | First Call (Cold) | Memory Usage |
+|---------------|-----------|-------------------|---------------|
+| 1,000         | 5         | ~50ms            | ~2KB         |
+| 10,000        | 25        | ~150ms           | ~8KB         |
+| 100,000       | 100       | ~400ms           | ~25KB        |
+| 1,000,000     | 500       | ~800ms           | ~100KB       |
+
+## Troubleshooting
+
+### Empty Results
+
+If `list_libraries_tool()` returns `{}`:
+
+1. **Check database exists**: Verify `~/.local/share/openground/lancedb/` contains data
+2. **Check table exists**: Run `openground list` in terminal
+3. **Add libraries**: Run `openground add <library>` to populate database
+4. **Check configuration**: Verify `db_path` in `~/.config/openground/config.json`
+
+### Outdated Cache
+
+If libraries don't appear after adding them:
+
+1. **Restart MCP server**: Cache invalidates only on restart
+2. **Check server logs**: Ensure library was added successfully
+3. **Verify database**: Run `openground list` to confirm library exists
+
+### Missing Expected Libraries
+
+If libraries you added don't appear:
+
+1. **Check ingestion logs**: Ensure `openground add` completed successfully
+2. **Verify version**: The exact version string must match
+3. **Check database path**: Ensure MCP server is using correct `db_path`
+4. **Inspect table**: Use LanceDB tools to directly query the table

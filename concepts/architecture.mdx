@@ -1,0 +1,335 @@
+---
+title: Architecture
+description: Understanding OpenGround's on-device RAG architecture and component interactions
+---
+
+OpenGround is an on-device RAG (Retrieval-Augmented Generation) system designed to give AI agents controlled access to documentation. Everything runs locally - no external APIs, no data leaves your machine.
+
+## System Overview
+
+OpenGround follows a pipeline architecture with three main stages:
+
+```
+      ┌─────────────────────────────────────────────────────────────────────┐
+      │                           OPENGROUND                                │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                                                                     │
+      │       SOURCE                  PROCESS              STORAGE/CLIENT   │
+      │                                                                     │
+      │    ┌──────────┐      ┌───────────┐   ┌──────────┐   ┌──────────┐    │
+      │    │ git repo ├─────>│  Extract  ├──>│  Chunk   ├──>│ LanceDB  │    │
+      │    |   -or-   |      │ (raw_data)│   │   Text   │   │ (vector  │    │
+      │    │ sitemap  │      └───────────┘   └──────────┘   │  +BM25)  │    │
+      │    │   -or-   │                           │         └────┬─────┘    │
+      │    │ local dir│                           │              │          │
+      │    └──────────┘                           │              │          │
+      │                                           ▼              │          │
+      │                                    ┌───────────┐         │          │
+      │                                    │   Local   |<────────┘          │
+      │                                    │ Embedding │         │          │
+      │                                    │   Model   │         ▼          │
+      │                                    └───────────┘  ┌─────────────┐   │
+      │                                                   │ CLI / MCP   │   │
+      │                                                   │  (hybrid    │   │
+      │                                                   |   search)   |   │
+      │                                                   └─────────────┘   │
+      │                                                                     │
+      └─────────────────────────────────────────────────────────────────────┘
+```
+
+## Architecture Stages
+
+### 1. Source Layer
+
+The source layer handles documentation ingestion from multiple source types. See the [Sources](/concepts/sources) page for detailed information.
+
+**Supported Sources:**
+- **Git Repositories**: Clone and extract documentation from specific branches/tags
+- **Sitemaps**: Crawl and extract web documentation following sitemap.xml
+- **Local Paths**: Process documentation from local directories
+
+**Key Components:**
+- `extract/git.py`: Handles git repository cloning with sparse checkout
+- `extract/sitemap.py`: Fetches and parses sitemaps, respects robots.txt
+- `extract/local_path.py`: Processes local file system paths
+- `extract/common.py`: Shared file processing logic
+
+### 2. Processing Layer
+
+The processing layer transforms raw documentation into searchable chunks.
+
+#### Text Extraction
+
+OpenGround supports multiple documentation formats:
+
+<CodeGroup>
+```python Markdown/MDX/RST
+# Handled in extract/common.py
+def remove_front_matter(content: str) -> tuple[str, dict[str, str]]:
+    """Parse YAML front matter and extract metadata"""
+    if not content.startswith("---"):
+        return content, {}
+    # Parse front matter for title, description, etc.
+```
+
+```python Jupyter Notebooks
+# Handled in extract/common.py
+def extract_notebook_content(file_path: Path) -> tuple[str, dict[str, str]]:
+    """Extract markdown and code cells from .ipynb files"""
+    nb = nbformat.read(file_path, as_version=4)
+    # Combine markdown and code cells
+```
+
+```python HTML
+# Handled in extract/sitemap.py
+def parse_html(url: str, html: str, ...) -> ParsedPage | None:
+    """Extract clean content using Trafilatura"""
+    content = trafilatura.extract(
+        html,
+        include_formatting=True,
+        output_format="markdown"
+    )
+```
+</CodeGroup>
+
+<Note>
+Supported file types: `.md`, `.mdx`, `.rst`, `.txt`, `.ipynb`, `.html`, `.htm`
+</Note>
+
+#### Document Chunking
+
+Documents are split into overlapping chunks for better retrieval (from `ingest.py:52-76`):
+
+```python
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+def chunk_document(page: ParsedPage) -> list[dict]:
+    config = get_effective_config()
+    chunk_size = config["embeddings"]["chunk_size"]        # Default: 800
+    chunk_overlap = config["embeddings"]["chunk_overlap"]  # Default: 200
+    
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size, 
+        chunk_overlap=chunk_overlap
+    )
+    chunks = splitter.split_text(page["content"])
+    
+    # Each chunk preserves metadata: url, title, version, library_name
+    records = []
+    for idx, chunk in enumerate(chunks):
+        records.append({
+            "url": page["url"],
+            "library_name": page["library_name"],
+            "version": page["version"],
+            "title": page["title"],
+            "content": chunk,
+            "chunk_index": idx,
+        })
+    return records
+```
+
+<Info>
+Chunk overlap ensures that context isn't lost at chunk boundaries, improving retrieval quality.
+</Info>
+
+#### Embedding Generation
+
+Each chunk is converted to a vector embedding using a local model. See [Embeddings](/concepts/embeddings) for details.
+
+### 3. Storage Layer
+
+OpenGround uses **LanceDB** for storing both vector embeddings and full-text search indices.
+
+#### Why LanceDB?
+
+- **Columnar storage**: Efficient for vector operations
+- **Built-in BM25**: Full-text search without external dependencies
+- **Local-first**: No server setup required
+- **PyArrow integration**: Fast data serialization
+
+#### Schema Structure
+
+From `ingest.py:163-177`, the LanceDB table schema:
+
+```python
+schema = pa.schema(
+    [
+        pa.field("url", pa.string()),
+        pa.field("library_name", pa.string()),
+        pa.field("version", pa.string()),
+        pa.field("title", pa.string()),
+        pa.field("description", pa.string()),
+        pa.field("last_modified", pa.string()),
+        pa.field("content", pa.string()),              # Text for BM25
+        pa.field("chunk_index", pa.int64()),
+        pa.field("vector", pa.list_(pa.float32(), 384)), # Embedding vector
+    ],
+    metadata={
+        "embedding_backend": "fastembed",
+        "embedding_model": "BAAI/bge-small-en-v1.5"
+    }
+)
+```
+
+<Tip>
+The schema metadata tracks which embedding model was used, preventing incompatible searches.
+</Tip>
+
+#### Full-Text Index
+
+After ingesting chunks, OpenGround creates a BM25 full-text search index (from `ingest.py:223-226`):
+
+```python
+table.add(all_records)
+table.create_fts_index("content", replace=True)
+```
+
+This enables hybrid search combining semantic similarity and keyword matching.
+
+### 4. Query/Client Layer
+
+The client layer exposes documentation through two interfaces:
+
+#### CLI Commands
+
+```bash
+# Search documentation
+openground query "how to configure embeddings" -l fastapi -v latest
+
+# List available libraries
+openground list
+
+# Get library statistics
+openground stats show
+```
+
+#### MCP Server
+
+The Model Context Protocol (MCP) server exposes OpenGround to AI agents:
+
+```python
+# From server.py
+tools = [
+    {"name": "search_documentation", ...},
+    {"name": "list_libraries", ...},
+    {"name": "get_full_content", ...}
+]
+```
+
+AI agents can search documentation without polluting the main conversation context.
+
+## Data Flow Example
+
+Let's trace a complete flow from adding documentation to searching it:
+
+<Steps>
+  <Step title="Add Documentation">
+    ```bash
+    openground add fastapi \
+      --source https://github.com/tiangolo/fastapi.git \
+      --docs-path docs/ \
+      --version v0.100.0 -y
+    ```
+    
+    1. Git extractor clones repo with sparse checkout
+    2. Filters for `.md`, `.mdx` files in `docs/`
+    3. Extracts content and metadata
+    4. Saves to `~/.local/share/openground/raw_data/fastapi/v0.100.0/`
+  </Step>
+  
+  <Step title="Chunk & Embed">
+    1. Load parsed pages from raw_data directory
+    2. Split each page into 800-character chunks with 200-char overlap
+    3. Generate embeddings for all chunks (batch size: 32)
+    4. Store in LanceDB with metadata
+  </Step>
+  
+  <Step title="Search">
+    ```python
+    # User query
+    query = "how to add dependencies"
+    
+    # Generate query embedding
+    query_vec = generate_embeddings([query])[0]
+    
+    # Hybrid search (vector + BM25)
+    results = table.search(query_type="hybrid")
+                   .text(query)
+                   .vector(query_vec)
+                   .where("version = 'v0.100.0'")
+                   .limit(5)
+                   .to_list()
+    ```
+    
+    Returns ranked results combining semantic similarity and keyword relevance.
+  </Step>
+</Steps>
+
+## Configuration
+
+OpenGround's behavior is controlled through a hierarchical configuration system (from `config.py`):
+
+```python
+# ~/.config/openground/config.json
+{
+  "db_path": "~/.local/share/openground/lancedb",
+  "table_name": "documents",
+  "raw_data_dir": "~/.local/share/openground/raw_data",
+  "extraction": {
+    "concurrency_limit": 50
+  },
+  "embeddings": {
+    "batch_size": 32,
+    "chunk_size": 800,
+    "chunk_overlap": 200,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "embedding_dimensions": 384,
+    "embedding_backend": "fastembed"
+  },
+  "query": {
+    "top_k": 5
+  },
+  "sources": {
+    "auto_add_local": true
+  }
+}
+```
+
+### XDG Compliance
+
+OpenGround follows the XDG Base Directory Specification (from `config.py:10-24`):
+
+- **Config**: `$XDG_CONFIG_HOME/openground` or `~/.config/openground`
+- **Data**: `$XDG_DATA_HOME/openground` or `~/.local/share/openground`
+- **Windows**: Uses `AppData/Local/openground`
+
+## Component Isolation
+
+Each component is designed for independence:
+
+- **Extractors** output standardized `ParsedPage` objects
+- **Ingestion** works with any `ParsedPage` source
+- **Query** operates on LanceDB tables regardless of source
+- **Embedding backends** are swappable (sentence-transformers ↔ fastembed)
+
+This modularity enables:
+- Adding new source types without changing ingestion
+- Swapping embedding models without changing extraction
+- Independent testing of each component
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sources" icon="folder-open" href="/concepts/sources">
+    Learn how OpenGround extracts documentation from git, sitemaps, and local paths
+  </Card>
+  <Card title="Embeddings" icon="brain" href="/concepts/embeddings">
+    Understand embedding backends, models, and dimensions
+  </Card>
+  <Card title="Search" icon="magnifying-glass" href="/concepts/search">
+    Deep dive into hybrid search with vector similarity and BM25
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Customize OpenGround's behavior with config options
+  </Card>
+</CardGroup>

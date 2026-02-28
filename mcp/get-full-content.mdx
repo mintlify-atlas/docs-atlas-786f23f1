@@ -1,0 +1,370 @@
+---
+title: get_full_content_tool
+description: Retrieve complete documentation page content by URL and version
+---
+
+## Overview
+
+The `get_full_content_tool` retrieves the complete, reassembled content of a documentation page. Use this tool when search results provide a relevant chunk, but you need to see the full page context.
+
+<Note>
+This tool is typically called after `search_documents_tool` returns results. Each search result includes a `tool_hint` with the exact parameters to pass to this tool.
+</Note>
+
+## Parameters
+
+<ParamField path="url" type="string" required>
+  The complete URL of the documentation page to retrieve. Must match exactly with a URL in the database.
+  
+  **Example:** "https://fastapi.tiangolo.com/tutorial/security/first-steps/"
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  The version of the documentation. Must match the version string stored in the database.
+  
+  **Example:** "0.104.0", "latest", "v4.5.2"
+</ParamField>
+
+## Return Format
+
+Returns a formatted markdown string containing the complete page content.
+
+### Successful Retrieval
+
+```markdown
+# {page_title}
+
+Source: {url}
+Version: {version}
+
+{full_content_chunk_1}
+
+{full_content_chunk_2}
+
+{full_content_chunk_3}
+...
+```
+
+### Page Not Found
+
+```
+No content found for URL: {url} (version: {version})
+```
+
+### Database Error
+
+```
+No content found for URL: {url}
+```
+
+## Response Fields
+
+The formatted response includes:
+
+<ResponseField name="title" type="string">
+  The title of the documentation page (from the first chunk's metadata)
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  The original URL of the documentation page
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  The version identifier for this documentation snapshot
+</ResponseField>
+
+<ResponseField name="content" type="string">
+  The complete page content, reassembled from all chunks in correct order (sorted by `chunk_index`)
+</ResponseField>
+
+## How It Works
+
+### Chunk Reassembly
+
+Documentation pages are stored as chunks during ingestion:
+
+1. **Query database**: Find all chunks matching the URL and version
+2. **Sort by chunk_index**: Ensures content is in original order
+3. **Concatenate**: Joins chunks with double newlines (`\n\n`)
+4. **Format**: Wraps in markdown with title and metadata
+
+### Database Query
+
+```sql
+SELECT title, content, chunk_index
+FROM documents
+WHERE url = '{url}' AND version = '{version}'
+ORDER BY chunk_index ASC
+```
+
+### Chunking Context
+
+During ingestion, pages are split into overlapping chunks:
+
+- **Default chunk size**: 800 characters
+- **Default overlap**: 200 characters
+- **Chunk index**: Sequential integer starting at 0
+
+When reassembled, the overlap is preserved, which may result in some repeated content at chunk boundaries.
+
+## Example Usage
+
+### From Search Result
+
+Typical workflow:
+
+```json
+// Step 1: Search
+{
+  "query": "authentication middleware",
+  "library_name": "fastapi",
+  "version": "0.104.0"
+}
+
+// Response includes:
+// To get full page content: {"tool": "get_full_content", "url": "https://fastapi.tiangolo.com/tutorial/security/first-steps/", "version": "0.104.0"}
+
+// Step 2: Get full content
+{
+  "url": "https://fastapi.tiangolo.com/tutorial/security/first-steps/",
+  "version": "0.104.0"
+}
+```
+
+**Response:**
+```markdown
+# Security - First Steps
+
+Source: https://fastapi.tiangolo.com/tutorial/security/first-steps/
+Version: 0.104.0
+
+Let's imagine that you have your backend API in some domain.
+
+And you have a frontend in another domain or in a different path of the same domain (or in a mobile application).
+
+And you want to have a way for the frontend to authenticate with the backend, using a username and password.
+
+We can use OAuth2 to build that with FastAPI.
+
+...
+
+[complete page content continues]
+```
+
+### Direct URL Access
+
+```json
+{
+  "url": "https://react.dev/reference/react/useState",
+  "version": "18.2.0"
+}
+```
+
+**Response:**
+```markdown
+# useState
+
+Source: https://react.dev/reference/react/useState
+Version: 18.2.0
+
+useState is a React Hook that lets you add a state variable to your component.
+
+const [state, setState] = useState(initialState)
+
+...
+
+[complete page content]
+```
+
+### Page Not Found
+
+```json
+{
+  "url": "https://fastapi.tiangolo.com/nonexistent-page/",
+  "version": "0.104.0"
+}
+```
+
+**Response:**
+```
+No content found for URL: https://fastapi.tiangolo.com/nonexistent-page/ (version: 0.104.0)
+```
+
+## Integration Patterns
+
+### Parse Tool Hint from Search
+
+```python
+import json
+
+# After search_documents_tool returns results
+search_response = """
+Found 2 matches.
+1. **Security**: "OAuth2 with Password..." (Source: https://..., Version: 0.104.0)
+   To get full page content: {"tool": "get_full_content", "url": "https://fastapi.tiangolo.com/tutorial/security/first-steps/", "version": "0.104.0"}
+"""
+
+# Extract and parse the tool hint
+import re
+tool_hint_match = re.search(r'To get full page content: ({.*?})', search_response)
+if tool_hint_match:
+    hint = json.loads(tool_hint_match.group(1))
+    
+    # Call get_full_content_tool with parsed parameters
+    full_content = get_full_content_tool(
+        url=hint["url"],
+        version=hint["version"]
+    )
+```
+
+### Selective Full Content Retrieval
+
+```python
+# Only fetch full content for the most relevant result
+if search_results_count > 0:
+    # Get tool hint from first result
+    first_result_hint = extract_first_tool_hint(search_response)
+    
+    full_content = get_full_content_tool(
+        url=first_result_hint["url"],
+        version=first_result_hint["version"]
+    )
+```
+
+### Batch Content Retrieval
+
+```python
+# Get full content for multiple relevant results
+search_results = parse_search_results(search_response)
+
+for result in search_results[:3]:  # Top 3 results
+    full_content = get_full_content_tool(
+        url=result["url"],
+        version=result["version"]
+    )
+    
+    # Process each full page
+    analyze_content(full_content)
+```
+
+## Best Practices
+
+<Tip>
+**Use tool hints from search results:**
+
+Don't manually construct URLs. Always use the tool hint provided in `search_documents_tool` results to ensure exact URL matching.
+</Tip>
+
+<Warning>
+**URL must match exactly:**
+
+URLs are matched byte-for-byte. Ensure no extra/missing slashes, query parameters, or fragments unless they were in the original indexed URL.
+</Warning>
+
+### When to Fetch Full Content
+
+**Fetch full content when:**
+- Search chunk doesn't provide enough context
+- You need to see complete code examples
+- Multiple sections of the page might be relevant
+- User explicitly asks to "see the full page"
+
+**Don't fetch full content when:**
+- Search chunk already answers the question
+- You're just verifying a quick fact
+- Multiple results need triage first
+- Bandwidth/latency is a concern
+
+### Content Size Awareness
+
+Full pages can be large:
+
+| Page Type | Typical Size | Chunk Count |
+|-----------|--------------|-------------|
+| API reference | 5-15KB | 8-20 chunks |
+| Tutorial | 10-30KB | 15-40 chunks |
+| Guide | 15-50KB | 20-70 chunks |
+| Long reference | 50-200KB | 70-300 chunks |
+
+Consider token limits when passing full content to LLMs.
+
+## Performance Characteristics
+
+### Query Performance
+
+- **Small pages** (< 5 chunks): < 10ms
+- **Medium pages** (5-20 chunks): 10-50ms
+- **Large pages** (20-100 chunks): 50-200ms
+- **Very large pages** (> 100 chunks): 200-500ms
+
+### Caching
+
+<Info>
+Unlike `list_libraries_tool`, this tool does **not** cache results. Each call performs a fresh database query.
+</Info>
+
+Rationale:
+- Full content is typically fetched once per page
+- Caching would consume significant memory
+- Database queries are fast enough for on-demand retrieval
+
+## Troubleshooting
+
+### "No content found" Errors
+
+**Cause 1: URL mismatch**
+```
+Stored:  https://example.com/docs/page/
+Queried: https://example.com/docs/page
+         (missing trailing slash)
+```
+
+**Solution:** Use exact URL from search result tool hint
+
+---
+
+**Cause 2: Version mismatch**
+```
+Stored:  version="latest"
+Queried: version="1.0.0"
+```
+
+**Solution:** Use exact version from search result tool hint
+
+---
+
+**Cause 3: Page never indexed**
+
+The page might not have been included during library ingestion.
+
+**Solution:** Re-run ingestion with updated sitemap/crawler settings
+
+### Truncated or Incomplete Content
+
+**Symptom:** Content seems to cut off mid-sentence
+
+**Cause:** Chunks were not properly indexed or chunk_index is missing
+
+**Solution:** 
+1. Check ingestion logs for errors
+2. Re-ingest the library version
+3. Verify chunk_index values in database
+
+### Duplicate Content at Chunk Boundaries
+
+**Symptom:** Some sentences/paragraphs appear twice
+
+**Cause:** Chunk overlap during ingestion (this is expected behavior)
+
+**Solution:** This is normal. The overlap ensures context is preserved across chunk boundaries. If it's excessive, reduce `chunk_overlap` configuration before re-ingesting.
+
+### Wrong Content Returned
+
+**Symptom:** Content doesn't match the URL
+
+**Cause:** Database corruption or multiple versions with same URL
+
+**Solution:**
+1. Verify version parameter is correct
+2. Check for duplicate entries: `openground list <library>`
+3. Delete and re-ingest the library version

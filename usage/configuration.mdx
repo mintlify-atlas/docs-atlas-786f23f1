@@ -1,0 +1,590 @@
+---
+title: Configuration
+description: Customize OpenGround settings, paths, and embedding parameters
+---
+
+OpenGround uses a JSON configuration file to manage settings for database paths, embedding models, query parameters, and more.
+
+## Configuration File Location
+
+OpenGround stores configuration at:
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    ```bash
+    ~/.config/openground/config.json
+    ```
+    
+    Or if `XDG_CONFIG_HOME` is set:
+    ```bash
+    $XDG_CONFIG_HOME/openground/config.json
+    ```
+  </Tab>
+  
+  <Tab title="Windows">
+    ```powershell
+    %LOCALAPPDATA%\openground\config.json
+    ```
+    
+    Typically:
+    ```powershell
+    C:\Users\YourName\AppData\Local\openground\config.json
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  The config file is automatically created with default values when you first run any `openground` command.
+</Info>
+
+## View Configuration
+
+Display your current configuration:
+
+```bash
+openground config show
+```
+
+### View Defaults Only
+
+See hardcoded default values (ignoring your custom settings):
+
+```bash
+openground config show --defaults
+```
+
+### Get Config File Path
+
+Print the path to the config file:
+
+```bash
+openground config path
+```
+
+## Default Configuration
+
+OpenGround uses these defaults:
+
+```json
+{
+  "db_path": "~/.local/share/openground/lancedb",
+  "table_name": "documents",
+  "raw_data_dir": "~/.local/share/openground/raw_data",
+  "extraction": {
+    "concurrency_limit": 50
+  },
+  "embeddings": {
+    "batch_size": 32,
+    "chunk_size": 800,
+    "chunk_overlap": 200,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "embedding_dimensions": 384,
+    "embedding_backend": "fastembed"
+  },
+  "query": {
+    "top_k": 5
+  },
+  "sources": {
+    "auto_add_local": true
+  }
+}
+```
+
+## Set Configuration Values
+
+Modify configuration settings using the `config set` command:
+
+```bash
+openground config set <key> <value>
+```
+
+Use dot notation for nested keys:
+
+```bash
+openground config set embeddings.chunk_size 1000
+```
+
+### Configuration Examples
+
+```bash
+# Change database path
+openground config set db_path "/data/openground/db"
+
+# Change chunk size
+openground config set embeddings.chunk_size 1200
+
+# Change chunk overlap
+openground config set embeddings.chunk_overlap 300
+
+# Change default top_k for queries
+openground config set query.top_k 10
+
+# Change embedding backend
+openground config set embeddings.embedding_backend "sentence-transformers"
+
+# Change embedding model
+openground config set embeddings.embedding_model "sentence-transformers/all-MiniLM-L6-v2"
+
+# Disable auto-add to sources.json
+openground config set sources.auto_add_local false
+
+# Change concurrency limit
+openground config set extraction.concurrency_limit 100
+```
+
+<Tip>
+  Values are automatically parsed as JSON. For booleans and numbers, just type the value. For strings with spaces, use quotes.
+</Tip>
+
+## Get Configuration Values
+
+Retrieve a specific configuration value:
+
+```bash
+openground config get <key>
+```
+
+### Get Examples
+
+```bash
+# Get chunk size
+openground config get embeddings.chunk_size
+# Output: 800
+
+# Get embedding model
+openground config get embeddings.embedding_model
+# Output: BAAI/bge-small-en-v1.5
+
+# Get database path
+openground config get db_path
+# Output: ~/.local/share/openground/lancedb
+
+# Get top_k
+openground config get query.top_k
+# Output: 5
+```
+
+## Reset Configuration
+
+Delete your config file and restore defaults:
+
+```bash
+openground config reset
+```
+
+With confirmation skip:
+
+```bash
+openground config reset --yes
+```
+
+<Warning>
+  This permanently deletes your custom configuration. You cannot undo this action.
+</Warning>
+
+## Configuration Settings Reference
+
+### Database Settings
+
+<ParamField path="db_path" type="string" default="~/.local/share/openground/lancedb">
+  Path to LanceDB database directory. Stores embeddings and vector indexes.
+</ParamField>
+
+<ParamField path="table_name" type="string" default="documents">
+  Name of the LanceDB table for storing document chunks.
+</ParamField>
+
+<ParamField path="raw_data_dir" type="string" default="~/.local/share/openground/raw_data">
+  Directory for storing extracted JSON files before embedding.
+</ParamField>
+
+### Extraction Settings
+
+<ParamField path="extraction.concurrency_limit" type="integer" default="50">
+  Maximum number of concurrent HTTP requests during sitemap extraction. Higher values extract faster but use more resources.
+</ParamField>
+
+### Embedding Settings
+
+<ParamField path="embeddings.batch_size" type="integer" default="32">
+  Number of text chunks to embed in each batch. Larger batches are faster but use more memory.
+</ParamField>
+
+<ParamField path="embeddings.chunk_size" type="integer" default="800">
+  Maximum number of characters per chunk when splitting documents. Affects embedding granularity.
+</ParamField>
+
+<ParamField path="embeddings.chunk_overlap" type="integer" default="200">
+  Number of overlapping characters between consecutive chunks. Helps maintain context across chunk boundaries.
+</ParamField>
+
+<ParamField path="embeddings.embedding_model" type="string" default="BAAI/bge-small-en-v1.5">
+  Name of the embedding model from Hugging Face. Must match the embedding backend.
+</ParamField>
+
+<ParamField path="embeddings.embedding_dimensions" type="integer" default="384">
+  Dimensionality of embedding vectors. Must match the model's output dimensions.
+</ParamField>
+
+<ParamField path="embeddings.embedding_backend" type="string" default="fastembed">
+  Backend for generating embeddings. Options: `"fastembed"` or `"sentence-transformers"`
+</ParamField>
+
+### Query Settings
+
+<ParamField path="query.top_k" type="integer" default="5">
+  Default number of search results to return. Can be overridden with `--top-k` flag.
+</ParamField>
+
+### Source Settings
+
+<ParamField path="sources.auto_add_local" type="boolean" default="true">
+  Automatically save library sources to `~/.openground/sources.json` when adding libraries with `--source` flag.
+</ParamField>
+
+<ParamField path="sources.file_path" type="string" optional>
+  Custom path to sources.json file. If not set, uses standard search order (project → user → package).
+</ParamField>
+
+## Embedding Backend Options
+
+OpenGround supports two embedding backends:
+
+### FastEmbed (Default)
+
+```bash
+openground config set embeddings.embedding_backend "fastembed"
+```
+
+**Advantages:**
+- ✅ Faster inference
+- ✅ Lower memory usage
+- ✅ Optimized for CPU
+- ✅ No dependency on PyTorch
+
+**Models:** Uses ONNX-optimized models
+
+### Sentence Transformers
+
+```bash
+openground config set embeddings.embedding_backend "sentence-transformers"
+```
+
+**Advantages:**
+- ✅ More model options
+- ✅ Better GPU support
+- ✅ Active development
+- ✅ Widely used
+
+**Models:** Uses standard Hugging Face models
+
+<Warning>
+  Changing the embedding backend requires re-embedding all libraries. Delete existing libraries and re-add them after changing backends.
+</Warning>
+
+<Accordion title="How do I change embedding models?">
+  1. Set the new model:
+  ```bash
+  openground config set embeddings.embedding_model "sentence-transformers/all-MiniLM-L6-v2"
+  openground config set embeddings.embedding_dimensions 384
+  ```
+  
+  2. Delete existing embeddings:
+  ```bash
+  openground nuke embeddings --yes
+  ```
+  
+  3. Re-embed your libraries:
+  ```bash
+  openground add mylib
+  ```
+  
+  **Note:** Make sure `embedding_dimensions` matches your model's output size.
+</Accordion>
+
+## Chunking Configuration
+
+Chunking parameters affect how documents are split before embedding:
+
+```bash
+# Larger chunks (more context, fewer chunks)
+openground config set embeddings.chunk_size 1200
+openground config set embeddings.chunk_overlap 300
+
+# Smaller chunks (more granular, more chunks)
+openground config set embeddings.chunk_size 600
+openground config set embeddings.chunk_overlap 150
+```
+
+<Accordion title="How do chunk_size and chunk_overlap affect search quality?">
+  **Larger chunks (800-1200 chars):**
+  - Better context preservation
+  - Fewer total chunks (faster indexing)
+  - May include irrelevant content
+  - Good for conceptual queries
+  
+  **Smaller chunks (400-600 chars):**
+  - More precise results
+  - Better for specific queries
+  - More chunks (slower indexing)
+  - May lose broader context
+  
+  **Overlap (150-300 chars):**
+  - Prevents information loss at boundaries
+  - Higher overlap = more context retention
+  - Higher overlap = more chunks
+  
+  **Recommendation:** Start with defaults (800/200) and adjust based on your documentation structure.
+</Accordion>
+
+## Source File Configuration
+
+OpenGround searches for library source configurations in this order:
+
+1. Custom path (if provided via `--sources-file` or `sources.file_path`)
+2. Project-local: `./.openground/sources.json`
+3. User home: `~/.openground/sources.json`
+4. Package-level: `openground/extract/sources.json`
+
+### Disable Auto-Add to Sources
+
+By default, when you add a library with `--source`, it's saved to `~/.openground/sources.json`:
+
+```bash
+# Disable automatic saving
+openground config set sources.auto_add_local false
+```
+
+### Custom Sources File
+
+```bash
+# Use a custom sources.json location
+openground config set sources.file_path "/path/to/my/sources.json"
+
+# Or pass directly to add command
+openground add mylib --sources-file "/path/to/sources.json"
+```
+
+## Environment Variables
+
+OpenGround respects XDG Base Directory specification:
+
+```bash
+# Override config directory
+export XDG_CONFIG_HOME="/custom/config"
+# Config will be at: /custom/config/openground/config.json
+
+# Override data directory
+export XDG_DATA_HOME="/custom/data"
+# Data will be at: /custom/data/openground/
+```
+
+## Configuration in Python
+
+Access configuration from Python code:
+
+```python
+from openground.config import (
+    get_effective_config,
+    get_default_config,
+    load_config,
+    save_config,
+    get_config_path,
+    clear_config_cache
+)
+
+# Get merged config (user + defaults)
+config = get_effective_config()
+print(config["embeddings"]["chunk_size"])  # 800
+
+# Get only defaults
+defaults = get_default_config()
+print(defaults["query"]["top_k"])  # 5
+
+# Load user config only (no defaults)
+user_config = load_config()
+print(user_config)  # Only user overrides
+
+# Modify and save config
+user_config["query"]["top_k"] = 10
+save_config(user_config)
+
+# Clear cache after modifications
+clear_config_cache()
+
+# Get config file path
+path = get_config_path()
+print(path)  # /home/user/.config/openground/config.json
+```
+
+## Advanced Configuration Examples
+
+### High-Performance Setup
+
+```bash
+# Optimize for speed
+openground config set extraction.concurrency_limit 100
+openground config set embeddings.batch_size 64
+openground config set embeddings.embedding_backend "fastembed"
+```
+
+### High-Quality Setup
+
+```bash
+# Optimize for quality
+openground config set embeddings.chunk_size 1200
+openground config set embeddings.chunk_overlap 300
+openground config set query.top_k 10
+```
+
+### Custom Storage Setup
+
+```bash
+# Use custom paths
+openground config set db_path "/mnt/ssd/openground/db"
+openground config set raw_data_dir "/mnt/storage/openground/raw"
+```
+
+### Large-Scale Setup
+
+```bash
+# For indexing many libraries
+openground config set extraction.concurrency_limit 200
+openground config set embeddings.batch_size 128
+```
+
+<Warning>
+  High concurrency and batch sizes require more memory and network bandwidth. Monitor resource usage when increasing these values.
+</Warning>
+
+## Configuration Best Practices
+
+<Steps>
+  <Step title="Start with Defaults">
+    Use default settings initially and only customize when needed:
+    ```bash
+    openground config show --defaults
+    ```
+  </Step>
+  
+  <Step title="Test Before Committing">
+    Test configuration changes on a small library before re-embedding large libraries:
+    ```bash
+    openground config set embeddings.chunk_size 1000
+    openground add testlib --source https://example.com/sitemap.xml
+    openground query "test query" --library testlib
+    ```
+  </Step>
+  
+  <Step title="Document Custom Settings">
+    Keep a record of why you changed settings:
+    ```bash
+    # Save current config
+    openground config show > my-config-backup.json
+    ```
+  </Step>
+  
+  <Step title="Version Control">
+    For team projects, commit `.openground/sources.json` to version control:
+    ```bash
+    git add .openground/sources.json
+    git commit -m "Add OpenGround library sources"
+    ```
+  </Step>
+</Steps>
+
+<Accordion title="Should I commit config.json to version control?">
+  **No** - `config.json` is user-specific and contains local paths. It should not be committed.
+  
+  **Yes** - `.openground/sources.json` is project-specific and can be shared with your team.
+  
+  ```gitignore
+  # .gitignore
+  .openground/config.json   # Do not commit
+  !.openground/sources.json # Do commit
+  ```
+</Accordion>
+
+<Accordion title="What happens if I change chunk_size after embedding?">
+  Existing embeddings use the old chunk_size. They won't automatically update. To apply new chunking:
+  
+  1. Change the setting:
+  ```bash
+  openground config set embeddings.chunk_size 1000
+  ```
+  
+  2. Delete and re-add libraries:
+  ```bash
+  openground remove mylib --version latest --yes
+  openground add mylib
+  ```
+  
+  Or use `nuke` for all libraries:
+  ```bash
+  openground nuke embeddings --yes
+  # Then re-add all libraries
+  ```
+</Accordion>
+
+<Accordion title="Can I use different configs for different projects?">
+  Yes! Use project-local sources:
+  
+  ```bash
+  # In project A
+  mkdir -p .openground
+  echo '{ "mylib": { "type": "sitemap", "sitemap_url": "..." } }' > .openground/sources.json
+  
+  # In project B
+  mkdir -p .openground
+  echo '{ "otherlib": { "type": "git_repo", "repo_url": "..." } }' > .openground/sources.json
+  ```
+  
+  Each project can have different source configurations.
+</Accordion>
+
+## Troubleshooting
+
+<Accordion title="Config changes don't take effect">
+  Clear the config cache:
+  ```python
+  from openground.config import clear_config_cache
+  clear_config_cache()
+  ```
+  
+  Or restart your Python process/terminal.
+</Accordion>
+
+<Accordion title="Invalid JSON error when loading config">
+  Your config file has syntax errors. View it:
+  ```bash
+  cat $(openground config path)
+  ```
+  
+  Fix JSON syntax or reset:
+  ```bash
+  openground config reset --yes
+  ```
+</Accordion>
+
+<Accordion title="Permission denied writing config">
+  Check directory permissions:
+  ```bash
+  ls -ld $(dirname $(openground config path))
+  ```
+  
+  Fix permissions:
+  ```bash
+  chmod 755 $(dirname $(openground config path))
+  ```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Querying" icon="magnifying-glass" href="/usage/querying">
+    Use your configured settings to query documentation
+  </Card>
+  <Card title="Adding Libraries" icon="plus" href="/quickstart/add-library">
+    Add libraries using custom configuration
+  </Card>
+</CardGroup>

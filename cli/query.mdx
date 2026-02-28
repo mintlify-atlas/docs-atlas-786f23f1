@@ -1,0 +1,134 @@
+---
+title: openground query
+description: Search documentation using hybrid semantic and keyword search
+---
+
+The `openground query` command performs hybrid search (semantic + BM25) against the local vector database.
+
+## Usage
+
+```bash
+openground query <query> [OPTIONS]
+```
+
+## Arguments
+
+<ParamField path="query" type="string" required>
+  Query string for hybrid search
+</ParamField>
+
+## Options
+
+<ParamField path="--version" type="string" default="latest">
+  Version to filter results by.
+  
+  **Aliases:** `-v`
+</ParamField>
+
+<ParamField path="--library" type="string" default="None">
+  Optional library name filter. If provided, only searches within this library.
+  
+  **Aliases:** `-l`
+</ParamField>
+
+<ParamField path="--top-k" type="integer" default="5">
+  Number of results to return. Default value comes from configuration (`query.top_k`).
+  
+  **Aliases:** `-k`
+  
+  **Constraints:** Minimum value is 1
+</ParamField>
+
+## Search Algorithm
+
+OpenGround uses **hybrid search** combining:
+
+1. **Semantic Search:** Vector similarity using embeddings
+2. **BM25 (Keyword Search):** Traditional full-text search
+
+Results are ranked by combining both scores, providing relevant results even when exact keywords don't match.
+
+## Examples
+
+### Basic Query
+
+```bash
+openground query "How to create a vector database"
+```
+
+### Query Specific Library
+
+```bash
+openground query "authentication" --library langchain
+```
+
+### Query Specific Version
+
+```bash
+openground query "new features" --version v2.0.0
+```
+
+### Get More Results
+
+```bash
+openground query "embeddings" --top-k 10
+```
+
+### Combined Options
+
+```bash
+openground query "API reference" -l mylib -v v1.5.0 -k 3
+```
+
+## Output Format
+
+Results are returned in markdown format with:
+- **Title:** Page title
+- **URL:** Source URL
+- **Library & Version:** Which library and version
+- **Content:** Relevant excerpt from the page
+
+### Output Example
+
+```markdown
+# Result 1
+
+**Title:** Vector Database Guide
+**URL:** https://docs.example.com/vector-db
+**Library:** mylib (v1.0.0)
+
+Vector databases store high-dimensional embeddings and support 
+semantic search queries. To create a vector database, you first 
+need to generate embeddings for your documents...
+
+---
+
+# Result 2
+
+**Title:** Embeddings Overview
+**URL:** https://docs.example.com/embeddings
+**Library:** mylib (v1.0.0)
+
+Embeddings are numerical representations of text that capture 
+semantic meaning. OpenGround supports multiple embedding backends...
+```
+
+## Configuration
+
+The default `top_k` value can be configured:
+
+```bash
+openground config set query.top_k 10
+```
+
+## Performance Tips
+
+1. **Be Specific:** More specific queries return better results
+2. **Use Library Filter:** Filter by library when you know which docs to search
+3. **Adjust top_k:** Increase for broader searches, decrease for focused results
+
+## Related Commands
+
+- [openground list](/cli/list) - View available libraries
+- [openground add](/cli/add) - Add documentation
+- [openground config](/cli/config) - Configure query settings

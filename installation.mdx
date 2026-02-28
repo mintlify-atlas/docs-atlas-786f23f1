@@ -1,0 +1,292 @@
+---
+title: Installation
+description: Install OpenGround with the right backend for your system
+---
+
+# Installation
+
+OpenGround can be installed with different embedding backends depending on your needs and hardware.
+
+## Prerequisites
+
+- Python 3.10, 3.11, or 3.12
+- pip or uv package manager
+- Git (for cloning documentation repositories)
+
+<Warning>
+Python 3.13 is not yet supported due to dependencies. Use Python 3.10-3.12.
+</Warning>
+
+## Installation Methods
+
+### Recommended: Install with uv
+
+[uv](https://docs.astral.sh/uv/) is the fastest Python package installer. Choose the variant that matches your hardware:
+
+<Tabs>
+  <Tab title="Full Support (Recommended)">
+    Includes sentence-transformers with automatic GPU/MPS/CPU detection:
+
+    ```bash
+    uv tool install openground
+    ```
+
+    **Pros:**
+    - Automatic hardware detection (GPU, MPS, CPU)
+    - Best performance on all platforms
+    - Most tested and stable
+
+    **Cons:**
+    - Larger package size (~2GB)
+    - Longer installation time
+  </Tab>
+
+  <Tab title="Lightweight CPU">
+    Uses fastembed for CPU-only workloads:
+
+    ```bash
+    uv tool install 'openground[fastembed]'
+    ```
+
+    **Pros:**
+    - Smaller package size (~200MB)
+    - Faster installation
+    - Lower memory usage
+
+    **Cons:**
+    - CPU-only, no GPU acceleration
+    - Slightly slower embedding generation
+  </Tab>
+
+  <Tab title="Experimental GPU">
+    Uses fastembed with CUDA support:
+
+    ```bash
+    uv tool install 'openground[fastembed-gpu]'
+    ```
+
+    <Warning>
+    This variant is experimental. Requires CUDA drivers and cuDNN to be properly installed.
+    </Warning>
+
+    **Pros:**
+    - Smaller than sentence-transformers
+    - GPU acceleration for embeddings
+
+    **Cons:**
+    - Requires CUDA setup
+    - Less stable than sentence-transformers GPU
+    - May not work out of the box
+  </Tab>
+</Tabs>
+
+### Alternative: Install with pip
+
+If you don't use uv, you can install with pip:
+
+<CodeGroup>
+```bash Full Support
+pip install openground
+```
+
+```bash Lightweight CPU
+pip install 'openground[fastembed]'
+```
+
+```bash Experimental GPU
+pip install 'openground[fastembed-gpu]'
+```
+</CodeGroup>
+
+## Backend Comparison
+
+| Feature | sentence-transformers | fastembed | fastembed-gpu |
+|---------|----------------------|-----------|---------------|
+| Package Size | ~2GB | ~200MB | ~500MB |
+| GPU Support | ✅ CUDA, MPS, CPU | ❌ CPU only | ✅ CUDA only |
+| Stability | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| Speed (GPU) | Fast | N/A | Fast |
+| Speed (CPU) | Medium | Fast | N/A |
+
+<Tip>
+Use the default `openground` package unless you have specific constraints. It provides the best experience across all hardware.
+</Tip>
+
+## Verify Installation
+
+After installation, verify that OpenGround is working:
+
+<Steps>
+  <Step title="Check version">
+    ```bash
+    openground version
+    ```
+
+    You should see a version number like `0.13.0`.
+  </Step>
+
+  <Step title="View help">
+    ```bash
+    openground --help
+    ```
+
+    This displays all available commands.
+  </Step>
+
+  <Step title="Check configuration">
+    ```bash
+    openground config show
+    ```
+
+    This creates a default configuration file and displays it.
+  </Step>
+</Steps>
+
+## GPU Setup (Optional)
+
+If you installed the default package or fastembed-gpu variant, you may want to verify GPU support.
+
+### NVIDIA GPU (CUDA)
+
+<Steps>
+  <Step title="Check NVIDIA drivers">
+    ```bash
+    nvidia-smi
+    ```
+
+    This should show your GPU information. If this fails, install NVIDIA drivers first.
+  </Step>
+
+  <Step title="For fastembed-gpu: Verify CUDA">
+    The fastembed-gpu variant requires CUDA 11.x or 12.x with matching cuDNN:
+
+    - [CUDA Toolkit Installation](https://developer.nvidia.com/cuda-downloads)
+    - [cuDNN Installation](https://developer.nvidia.com/cudnn)
+
+    See [ONNX Runtime CUDA requirements](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html) for compatibility.
+  </Step>
+
+  <Step title="For sentence-transformers: Verify PyTorch">
+    ```bash
+    python -c "import torch; print(torch.cuda.is_available())"
+    ```
+
+    This should print `True` if CUDA is working.
+  </Step>
+</Steps>
+
+### Apple Silicon (MPS)
+
+The default package (sentence-transformers) automatically uses Apple's Metal Performance Shaders on M1/M2/M3 Macs:
+
+```bash
+python -c "import torch; print(torch.backends.mps.is_available())"
+```
+
+Should print `True` on Apple Silicon Macs.
+
+<Note>
+fastembed and fastembed-gpu do not support Apple Silicon GPU acceleration. Use the default package for MPS support.
+</Note>
+
+## Troubleshooting
+
+<Accordion title="ModuleNotFoundError: No module named 'openground'">
+The package is not installed in your current Python environment.
+
+**Solution:**
+- If using uv: Make sure you used `uv tool install` not `uv pip install`
+- If using pip: Try `python -m pip install openground`
+- Verify with `which openground` or `where openground` (Windows)
+</Accordion>
+
+<Accordion title="GPU detected but CUDA is not functional">
+You have an NVIDIA GPU but CUDA is not working.
+
+**Solution for fastembed-gpu:**
+1. Ensure CUDA 11.x or 12.x is installed
+2. Install matching cuDNN version
+3. Verify with `python -c "import onnxruntime as ort; print(ort.get_available_providers())"`
+4. Should include 'CUDAExecutionProvider'
+
+**Solution for sentence-transformers:**
+1. Reinstall PyTorch with CUDA support:
+   ```bash
+   pip install torch --index-url https://download.pytorch.org/whl/cu121
+   ```
+2. Verify with `python -c "import torch; print(torch.cuda.is_available())"`
+</Accordion>
+
+<Accordion title="Installation takes forever">
+The default package includes PyTorch and sentence-transformers which are large.
+
+**Solutions:**
+- Use `openground[fastembed]` for a lighter install
+- Ensure you have a good internet connection
+- The download is large but only happens once
+</Accordion>
+
+<Accordion title="Permission denied on Windows">
+Windows may require administrator privileges.
+
+**Solution:**
+- Run your terminal as administrator
+- Or use `--user` flag: `pip install --user openground`
+</Accordion>
+
+## Switching Backends
+
+If you want to switch backends after installation, see the [Embedding Backends](/advanced/embedding-backends) guide.
+
+<Warning>
+Switching backends requires re-embedding all your documentation. Existing databases are not compatible across backends.
+</Warning>
+
+## Upgrading
+
+To upgrade to the latest version:
+
+<CodeGroup>
+```bash uv
+uv tool upgrade openground
+```
+
+```bash pip
+pip install --upgrade openground
+```
+</CodeGroup>
+
+## Uninstalling
+
+To remove OpenGround:
+
+<CodeGroup>
+```bash uv
+uv tool uninstall openground
+```
+
+```bash pip
+pip uninstall openground
+```
+</CodeGroup>
+
+<Info>
+Uninstalling does not remove your configuration or embedded documentation. To remove all data, run `openground nuke all` before uninstalling.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started in 5 minutes
+  </Card>
+  <Card title="Add Documentation" icon="book" href="/guides/add-from-git">
+    Add your first documentation library
+  </Card>
+  <Card title="Configuration" icon="gear" href="/usage/configuration">
+    Customize OpenGround settings
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/integration/mcp-overview">
+    Connect to AI coding assistants
+  </Card>
+</CardGroup>

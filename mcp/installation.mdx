@@ -1,0 +1,437 @@
+---
+title: Installation
+description: Install and configure the OpenGround MCP server for your AI agent
+---
+
+## Overview
+
+The OpenGround MCP server provides official documentation search capabilities to AI agents through the Model Context Protocol (MCP). This guide covers installation for different AI agents and development environments.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Python 3.11+">
+    OpenGround requires Python 3.11 or higher.
+    
+    ```bash
+    python --version  # Should be 3.11 or higher
+    ```
+  </Step>
+  
+  <Step title="Install OpenGround">
+    Install the OpenGround package from PyPI:
+    
+    ```bash
+    pip install openground
+    ```
+    
+    Or with pipx for isolated installation:
+    
+    ```bash
+    pipx install openground
+    ```
+  </Step>
+  
+  <Step title="Add documentation libraries">
+    Add at least one documentation library to make the MCP server useful:
+    
+    ```bash
+    # Add a library (this will download and index documentation)
+    openground add fastapi --version latest
+    
+    # Verify installation
+    openground list
+    ```
+  </Step>
+</Steps>
+
+## Installation by Agent
+
+### Claude Desktop
+
+<Steps>
+  <Step title="Locate configuration file">
+    Find your Claude Desktop configuration file:
+    
+    **macOS:**
+    ```bash
+    ~/Library/Application\ Support/Claude/claude_desktop_config.json
+    ```
+    
+    **Windows:**
+    ```bash
+    %APPDATA%/Claude/claude_desktop_config.json
+    ```
+    
+    **Linux:**
+    ```bash
+    ~/.config/Claude/claude_desktop_config.json
+    ```
+  </Step>
+  
+  <Step title="Add OpenGround MCP server">
+    Edit the configuration file to add the OpenGround server:
+    
+    ```json
+    {
+      "mcpServers": {
+        "openground": {
+          "command": "python",
+          "args": ["-m", "openground.server"]
+        }
+      }
+    }
+    ```
+    
+    If using pipx:
+    ```json
+    {
+      "mcpServers": {
+        "openground": {
+          "command": "pipx",
+          "args": ["run", "openground", "serve"]
+        }
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Restart Claude Desktop">
+    Completely quit and restart Claude Desktop for changes to take effect.
+  </Step>
+  
+  <Step title="Verify installation">
+    In Claude Desktop, you should see the OpenGround tools available:
+    - `search_documents_tool`
+    - `list_libraries_tool`
+    - `get_full_content_tool`
+    
+    Test by asking: "What libraries are available in OpenGround?"
+  </Step>
+</Steps>
+
+### Continue.dev
+
+<Steps>
+  <Step title="Open Continue configuration">
+    Open the Continue configuration file:
+    
+    ```bash
+    ~/.continue/config.json
+    ```
+  </Step>
+  
+  <Step title="Add MCP server">
+    Add OpenGround to the `mcpServers` section:
+    
+    ```json
+    {
+      "mcpServers": [
+        {
+          "name": "openground",
+          "command": "python",
+          "args": ["-m", "openground.server"],
+          "transport": "stdio"
+        }
+      ]
+    }
+    ```
+  </Step>
+  
+  <Step title="Restart Continue">
+    Restart your IDE or reload the Continue extension.
+  </Step>
+</Steps>
+
+### Cline (VSCode)
+
+<Steps>
+  <Step title="Open Cline settings">
+    In VSCode:
+    1. Open Command Palette (`Cmd/Ctrl + Shift + P`)
+    2. Search for "Cline: Open Settings"
+  </Step>
+  
+  <Step title="Configure MCP server">
+    In the MCP Servers section, add:
+    
+    ```json
+    {
+      "openground": {
+        "command": "python",
+        "args": ["-m", "openground.server"]
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Restart Cline">
+    Reload VSCode or restart the Cline extension.
+  </Step>
+</Steps>
+
+### Zed Editor
+
+<Steps>
+  <Step title="Open Zed settings">
+    Open Zed settings file:
+    
+    **macOS/Linux:**
+    ```bash
+    ~/.config/zed/settings.json
+    ```
+  </Step>
+  
+  <Step title="Add MCP server configuration">
+    ```json
+    {
+      "context_servers": {
+        "openground": {
+          "command": "python",
+          "args": ["-m", "openground.server"]
+        }
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Restart Zed">
+    Restart Zed editor to load the new MCP server.
+  </Step>
+</Steps>
+
+### Custom MCP Client
+
+For custom integrations using the MCP SDK:
+
+```python
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+server_params = StdioServerParameters(
+    command="python",
+    args=["-m", "openground.server"],
+)
+
+async with stdio_client(server_params) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        
+        # List available tools
+        tools = await session.list_tools()
+        print(tools)
+        
+        # Call a tool
+        result = await session.call_tool(
+            "list_libraries_tool",
+            arguments={}
+        )
+        print(result)
+```
+
+## Virtual Environment Setup
+
+If you need to use a specific Python virtual environment:
+
+### Option 1: Activate in command
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/path/to/venv/bin/python",
+      "args": ["-m", "openground.server"]
+    }
+  }
+}
+```
+
+### Option 2: Use shell wrapper
+
+Create a shell script `~/.local/bin/openground-mcp.sh`:
+
+```bash
+#!/bin/bash
+source /path/to/venv/bin/activate
+python -m openground.server
+```
+
+Make it executable:
+```bash
+chmod +x ~/.local/bin/openground-mcp.sh
+```
+
+Configure MCP client:
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/Users/yourname/.local/bin/openground-mcp.sh",
+      "args": []
+    }
+  }
+}
+```
+
+## Verifying Installation
+
+### Check Server Startup
+
+Run the server manually to verify it starts without errors:
+
+```bash
+python -m openground.server
+```
+
+You should see:
+```
+[info] Background initialization started...
+[info] Background initialization complete (took 1.23s). Server is fully ready.
+```
+
+### Test Tools
+
+In your MCP client, test each tool:
+
+```
+1. List libraries:
+   "What documentation libraries are available?"
+   
+2. Search:
+   "Search FastAPI docs for authentication examples"
+   
+3. Get full content:
+   "Show me the full page for [URL from search result]"
+```
+
+## Common Installation Issues
+
+### Python Not Found
+
+**Error:** `command not found: python`
+
+**Solution:** Use full path to Python or specify `python3`:
+```json
+{
+  "command": "python3",
+  "args": ["-m", "openground.server"]
+}
+```
+
+### Module Not Found
+
+**Error:** `No module named 'openground'`
+
+**Solution:** Install openground in the correct Python environment:
+```bash
+# Find which Python is used
+which python
+
+# Install openground for that Python
+python -m pip install openground
+```
+
+### Server Times Out
+
+**Error:** MCP server fails to initialize or times out
+
+**Cause:** Background initialization might be taking too long on first run
+
+**Solution:**
+1. Pre-warm the server by running it manually once:
+   ```bash
+   python -m openground.server
+   # Wait for "fully ready" message, then Ctrl+C
+   ```
+2. Ensure you have at least one library added:
+   ```bash
+   openground list
+   ```
+
+### Permission Denied
+
+**Error:** Permission errors when accessing database
+
+**Solution:** Check permissions on OpenGround data directory:
+```bash
+# Linux/macOS
+ls -la ~/.local/share/openground/
+chmod -R u+rw ~/.local/share/openground/
+
+# Windows
+# Verify AppData/Local/openground permissions
+```
+
+### Empty Library List
+
+**Symptom:** `list_libraries_tool` returns `{}`
+
+**Solution:** Add libraries first:
+```bash
+openground add fastapi
+openground add django --version 5.0
+openground list  # Verify they're added
+```
+
+## Updating OpenGround
+
+To update to the latest version:
+
+```bash
+pip install --upgrade openground
+```
+
+Or with pipx:
+```bash
+pipx upgrade openground
+```
+
+After updating, restart your MCP client to load the new version.
+
+## Uninstallation
+
+### Remove MCP Server
+
+1. Remove the `openground` entry from your MCP client configuration
+2. Restart the MCP client
+
+### Uninstall Package
+
+```bash
+pip uninstall openground
+```
+
+Or with pipx:
+```bash
+pipx uninstall openground
+```
+
+### Remove Data
+
+To completely remove all OpenGround data:
+
+```bash
+# Linux/macOS
+rm -rf ~/.local/share/openground
+rm -rf ~/.config/openground
+rm -rf ~/.openground
+
+# Windows
+# Delete these folders:
+# %LOCALAPPDATA%\openground
+# %USERPROFILE%\.openground
+```
+
+## Next Steps
+
+<Card title="Configuration" icon="gear" href="/mcp/configuration">
+  Configure OpenGround settings, environment variables, and optimize performance
+</Card>
+
+<Card title="Search Documents" icon="search" href="/mcp/search-documents">
+  Learn how to use the search_documents_tool effectively
+</Card>
+
+<Card title="List Libraries" icon="list" href="/mcp/list-libraries">
+  Explore available documentation libraries and versions
+</Card>

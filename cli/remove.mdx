@@ -1,0 +1,139 @@
+---
+title: openground remove
+description: Remove a library version from the database
+---
+
+The `openground remove` command deletes all documents for a specific library version from the local vector database.
+
+## Usage
+
+```bash
+openground remove <library_name> --version <version> [OPTIONS]
+openground rm <library_name> --version <version> [OPTIONS]  # Shorthand alias
+```
+
+## Arguments
+
+<ParamField path="library_name" type="string" required>
+  Name of the library to remove
+</ParamField>
+
+## Options
+
+<ParamField path="--version" type="string" required>
+  Version of the library to remove.
+  
+  **Aliases:** `-v`
+  
+  **Note:** This option is required. You must specify which version to remove.
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+## Behavior
+
+### Confirmation Prompt
+
+Before deletion, the command shows:
+- Library name and version
+- Number of chunks to be deleted
+- Number of unique pages
+- Sample page titles (up to 3)
+
+You must confirm unless `--yes` is used.
+
+### Raw Files
+
+After removing from the database, the command offers to delete raw files from the raw data directory:
+- Location: `~/.openground/raw_data/{library}/{version}/`
+- You can choose to keep or delete these files
+
+<Warning>
+  This operation cannot be undone. Make sure you have backups or can re-extract the documentation.
+</Warning>
+
+## Examples
+
+### Remove with Confirmation
+
+```bash
+openground remove langchain --version latest
+```
+
+**Output:**
+```
+Library: langchain
+Version: latest
+  Chunks: 2,847
+  Pages:  523
+  Sample titles: Introduction, Quick Start, Installation
+
+Are you sure you want to delete this library version? [y/N]: y
+
+✓ Deleted 2,847 chunks for library 'langchain' version 'latest'.
+
+Also delete raw files at /home/user/.openground/raw_data/langchain/latest? [y/N]: y
+✓ Deleted raw library files at /home/user/.openground/raw_data/langchain/latest.
+```
+
+### Remove Without Confirmation
+
+```bash
+openground remove mylib --version v1.0.0 -y
+```
+
+### Using Shorthand Alias
+
+```bash
+openground rm mylib -v latest -y
+```
+
+## Error Handling
+
+### Library Not Found
+
+```bash
+openground remove nonexistent --version latest
+```
+
+**Output:**
+```
+Library 'nonexistent' version 'latest' not found.
+```
+
+## Workflow
+
+1. **Check what exists:**
+   ```bash
+   openground list-libraries
+   ```
+
+2. **Remove a library:**
+   ```bash
+   openground remove mylib --version latest
+   ```
+
+3. **Verify removal:**
+   ```bash
+   openground list-libraries
+   ```
+
+## Removing Multiple Versions
+
+To remove multiple versions, run the command for each:
+
+```bash
+openground remove mylib --version v1.0.0 -y
+openground remove mylib --version v2.0.0 -y
+openground remove mylib --version latest -y
+```
+
+## Related Commands
+
+- [openground list](/cli/list) - View installed libraries
+- [openground nuke](/cli/nuke) - Delete all data
+- [openground add](/cli/add) - Add libraries back

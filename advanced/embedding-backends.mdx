@@ -1,0 +1,220 @@
+---
+title: Embedding Backends
+description: Understanding sentence-transformers vs fastembed backends
+---
+
+OpenGround supports two embedding backends for generating vector representations of text: **sentence-transformers** and **fastembed**. Each has different characteristics that make them suitable for different use cases.
+
+## Backend Comparison
+
+### Fastembed (Default)
+
+**Pros:**
+- Lightweight and fast
+- Smaller installation footprint
+- Efficient ONNX runtime
+- Good CPU performance
+- Optional GPU support via `fastembed-gpu`
+
+**Cons:**
+- Limited model selection
+- Less mature ecosystem
+- GPU support requires specific CUDA setup
+
+**Best for:** Production deployments, resource-constrained environments, CPU-only systems
+
+### Sentence-Transformers
+
+**Pros:**
+- Extensive model library
+- Mature and well-tested
+- Better GPU compatibility
+- More flexible configuration options
+- Automatic GPU detection
+
+**Cons:**
+- Larger installation size
+- More dependencies
+- Higher memory footprint
+
+**Best for:** Research, experimentation, systems with GPUs, when you need specific models
+
+## Configuration
+
+Set your backend in the configuration:
+
+```yaml
+embeddings:
+  embedding_backend: "fastembed"  # or "sentence-transformers"
+  embedding_model: "BAAI/bge-small-en-v1.5"
+  batch_size: 32
+```
+
+## Installation
+
+### Fastembed (CPU)
+
+```bash
+uv tool install 'openground[fastembed]'
+```
+
+### Fastembed (GPU)
+
+```bash
+uv tool install 'openground[fastembed-gpu]'
+```
+
+### Sentence-Transformers
+
+```bash
+uv tool install 'openground[sentence-transformers]'
+```
+
+## Switching Backends
+
+<Warning>
+When switching backends, you must re-index your documentation with the new backend. Embeddings from different backends are **not compatible**.
+</Warning>
+
+To switch backends:
+
+1. **Update your configuration** to specify the new backend
+2. **Delete existing index** (or use a new table name)
+3. **Re-run indexing** with the new backend
+
+```bash
+# Example: switching to sentence-transformers
+uv tool install 'openground[sentence-transformers]'
+
+# Update config to use sentence-transformers backend
+# Then re-index
+openground index https://docs.example.com --library mylib --version 1.0
+```
+
+## Implementation Details
+
+From `embeddings.py:207-234`:
+
+```python
+def generate_embeddings(
+    texts: Iterable[str],
+    show_progress: bool = True,
+) -> list[list[float]]:
+    """Generate embeddings for documents using the specified backend."""
+    
+    config = get_effective_config()
+    backend = config["embeddings"]["embedding_backend"]
+    
+    if backend == "fastembed":
+        return _generate_embeddings_fastembed(texts, show_progress=show_progress)
+    elif backend == "sentence-transformers":
+        return _generate_embeddings_sentence_transformers(
+            texts, show_progress=show_progress
+        )
+    else:
+        raise ValueError(
+            f"Invalid embedding backend: {backend}. Must be 'sentence-transformers' "
+            "or 'fastembed'."
+        )
+```
+
+### Fastembed Implementation
+
+Fastembed uses the `passage_embed` method for document embeddings (`embeddings.py:163-204`):
+
+```python
+def _generate_embeddings_fastembed(
+    texts: Iterable[str],
+    show_progress: bool = True,
+) -> list[list[float]]:
+    config = get_effective_config()
+    batch_size = config["embeddings"]["batch_size"]
+    model_name = config["embeddings"]["embedding_model"]
+    
+    model = get_fastembed_model(model_name)
+    
+    # fastembed processes in batches internally
+    for i in range(0, len(texts_list), batch_size):
+        batch = texts_list[i : i + batch_size]
+        # passage_embed returns a generator of numpy arrays
+        batch_embeddings = list(model.passage_embed(batch))
+        # Convert numpy arrays to lists of floats
+        all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
+```
+
+### Sentence-Transformers Implementation
+
+Sentence-transformers uses normalized embeddings (`embeddings.py:119-160`):
+
+```python
+def _generate_embeddings_sentence_transformers(
+    texts: Iterable[str],
+    show_progress: bool = True,
+) -> list[list[float]]:
+    config = get_effective_config()
+    batch_size = config["embeddings"]["batch_size"]
+    model_name = config["embeddings"]["embedding_model"]
+    model = get_st_model(model_name)
+    
+    for i in range(0, len(texts_list), batch_size):
+        batch = texts_list[i : i + batch_size]
+        batch_embeddings = model.encode(
+            sentences=batch,
+            batch_size=len(batch),
+            normalize_embeddings=True,  # L2 normalization
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        all_embeddings.extend(list(batch_embeddings))
+```
+
+## Model Caching
+
+Both backends use `@lru_cache` to avoid reloading models:
+
+```python
+@lru_cache(maxsize=1)
+def get_st_model(model_name: str):
+    """Get a cached instance of SentenceTransformer."""
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(model_name)
+
+@lru_cache(maxsize=1)
+def get_fastembed_model(model_name: str, use_cuda: bool = True):
+    """Get a cached instance of TextEmbedding (fastembed)."""
+    from fastembed import TextEmbedding
+    # ... GPU configuration ...
+    return TextEmbedding(model_name=model_name, providers=[...])
+```
+
+## Backend-Specific Errors
+
+### Fastembed Not Installed
+
+```
+ImportError: The 'fastembed' backend is not installed.
+Please install it with: pip install fastembed
+```
+
+**Solution:** Install the appropriate fastembed package
+
+### Sentence-Transformers Not Installed
+
+```
+ImportError: The 'sentence-transformers' backend is not installed.
+Please install it with: pip install 'openground[sentence-transformers]'
+```
+
+**Solution:** Install sentence-transformers backend
+
+## Performance Considerations
+
+- **Batch Size:** Both backends respect the `batch_size` configuration. Larger batches can improve throughput but require more memory
+- **Progress Bars:** Both show progress during embedding generation via `tqdm`
+- **Memory:** Sentence-transformers generally uses more memory than fastembed
+- **Speed:** Fastembed is typically faster on CPU; sentence-transformers may be faster on GPU with proper setup
+
+## Next Steps
+
+- Learn about [GPU Acceleration](/advanced/gpu-acceleration) for faster embedding generation
+- Explore [Hybrid Search](/advanced/hybrid-search) to understand how embeddings are used in queries

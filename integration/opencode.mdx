@@ -1,0 +1,531 @@
+---
+title: OpenCode Integration
+description: Configure OpenGround MCP server in OpenCode by modifying opencode.json
+---
+
+# OpenCode Integration
+
+Integrate OpenGround with OpenCode to search documentation during your AI-assisted development sessions.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Install OpenGround">
+    ```bash
+    pip install openground
+    ```
+  </Step>
+  <Step title="Add Documentation">
+    Index at least one library:
+    ```bash
+    openground add fastapi --source https://github.com/tiangolo/fastapi.git --docs-path docs -y
+    ```
+  </Step>
+  <Step title="Install OpenCode">
+    Download from [opencode.sh](https://opencode.sh)
+  </Step>
+</Steps>
+
+## Installation
+
+### Automatic Installation (Recommended)
+
+OpenGround provides an automatic installer for OpenCode:
+
+```bash
+openground install-mcp --opencode
+```
+
+This command:
+1. Locates your OpenCode config at `~/.config/opencode/opencode.json`
+2. Creates a timestamped backup of existing config
+3. Safely merges the OpenGround MCP server configuration
+4. Validates JSON before writing
+
+<Check>**Success!** You should see: "Successfully installed openground to OpenCode!"</Check>
+
+### Configuration Structure
+
+The installer adds this configuration to `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "local",
+      "command": ["openground-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Configuration File Location
+
+OpenCode stores its configuration at:
+
+<Tabs>
+  <Tab title="macOS">
+    ```bash
+    ~/.config/opencode/opencode.json
+    ```
+  </Tab>
+  <Tab title="Linux">
+    ```bash
+    ~/.config/opencode/opencode.json
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    %USERPROFILE%\.config\opencode\opencode.json
+    ```
+    
+    Typically:
+    ```
+    C:\Users\YourUsername\.config\opencode\opencode.json
+    ```
+  </Tab>
+</Tabs>
+
+### Manual Installation
+
+If you prefer to manually edit the configuration:
+
+<Steps>
+  <Step title="Generate Configuration">
+    ```bash
+    openground install-mcp
+    ```
+    This displays the JSON without modifying files
+  </Step>
+  <Step title="Locate OpenCode Config">
+    Navigate to `~/.config/opencode/opencode.json`
+  </Step>
+  <Step title="Edit Configuration">
+    Add the OpenGround server to the `mcp` section:
+    
+    ```json
+    {
+      "mcp": {
+        "openground": {
+          "type": "local",
+          "command": ["openground-mcp"],
+          "enabled": true
+        }
+      }
+    }
+    ```
+    
+    If you have existing MCP servers, add OpenGround alongside them:
+    
+    ```json
+    {
+      "mcp": {
+        "filesystem": {
+          "type": "local",
+          "command": ["some-other-server"],
+          "enabled": true
+        },
+        "openground": {
+          "type": "local",
+          "command": ["openground-mcp"],
+          "enabled": true
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Validate JSON">
+    Ensure proper syntax (no trailing commas, quotes, etc.)
+  </Step>
+</Steps>
+
+## Configuration Details
+
+### OpenCode MCP Schema
+
+OpenCode's MCP configuration differs slightly from other clients:
+
+| Field | Value | Description |
+|-------|-------|-------------|
+| `type` | `"local"` | Indicates a local subprocess server |
+| `command` | `["openground-mcp"]` | Command as an array (not a string) |
+| `enabled` | `true` | Whether the server is active |
+
+### Command Resolution
+
+The installer uses the full path to `openground-mcp` if found in PATH:
+
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "local",
+      "command": ["/usr/local/bin/openground-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Transport Protocol
+
+OpenGround uses **stdio** (standard input/output):
+- OpenCode spawns `openground-mcp` as a subprocess
+- Communication via stdin/stdout
+- No network ports required
+
+### Backup Files
+
+The installer creates timestamped backups before making changes:
+
+```bash
+~/.config/opencode/opencode.json.backup.20240228_153045
+```
+
+Restore from backup if needed:
+
+```bash
+cp ~/.config/opencode/opencode.json.backup.YYYYMMDD_HHMMSS ~/.config/opencode/opencode.json
+```
+
+## Verification
+
+<Steps>
+  <Step title="Restart OpenCode">
+    Completely quit and restart OpenCode
+  </Step>
+  <Step title="Check MCP Status">
+    In OpenCode settings or console, verify OpenGround MCP is connected
+  </Step>
+  <Step title="Test Tools">
+    Ask OpenCode: "What documentation is available in openground?"
+    
+    OpenCode should call `list_libraries_tool` and display your indexed libraries
+  </Step>
+</Steps>
+
+## Using OpenGround in OpenCode
+
+### Automatic Tool Invocation
+
+OpenCode will automatically use OpenGround when appropriate:
+
+```
+You: How do I create a FastAPI route with path parameters?
+
+OpenCode: Let me check the FastAPI documentation...
+[Calls mcp__openground__search_documents_tool]
+
+According to the official FastAPI docs:
+...
+```
+
+### Explicit Documentation Searches
+
+Request specific documentation searches:
+
+```
+You: Search openground for React context API examples
+
+OpenCode: [Searches React documentation]
+```
+
+### Combining Code and Docs
+
+OpenCode can analyze your code alongside documentation:
+
+```
+You: Is this the correct way to use Django model validators?
+[paste code]
+
+OpenCode: [Analyzes code + searches Django docs for validator patterns]
+```
+
+## Platform-Specific Configuration
+
+### macOS
+
+No additional configuration needed. Works out of the box.
+
+### Linux
+
+Ensure pip's bin directory is in PATH:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+
+# Reload
+source ~/.bashrc
+```
+
+Verify:
+```bash
+which openground-mcp
+# Should output: /home/username/.local/bin/openground-mcp
+```
+
+### Windows
+
+<Tabs>
+  <Tab title="Native Windows">
+    Add Python Scripts to PATH:
+    
+    ```powershell
+    # Check availability
+    where openground-mcp
+    ```
+    
+    If not found:
+    1. Open System Properties → Environment Variables
+    2. Add to PATH:
+       ```
+       C:\Users\YourUsername\AppData\Local\Programs\Python\Python311\Scripts
+       ```
+    3. Restart terminal/OpenCode
+    
+    Run installer:
+    ```powershell
+    openground install-mcp --opencode
+    ```
+  </Tab>
+  <Tab title="WSL">
+    If OpenGround is in WSL but OpenCode runs on Windows:
+    
+    <Steps>
+      <Step title="Generate WSL Config">
+        In WSL:
+        ```bash
+        openground install-mcp --wsl
+        ```
+      </Step>
+      <Step title="Copy to Windows">
+        Edit Windows config at:
+        ```
+        C:\Users\YourUsername\.config\opencode\opencode.json
+        ```
+        
+        Add:
+        ```json
+        {
+          "mcp": {
+            "openground": {
+              "type": "local",
+              "command": ["wsl.exe", "openground-mcp"],
+              "enabled": true
+            }
+          }
+        }
+        ```
+      </Step>
+      <Step title="Restart OpenCode">
+        Quit and restart completely
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Advanced Configuration
+
+### Disable OpenGround Temporarily
+
+Set `enabled` to `false` without removing the configuration:
+
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "local",
+      "command": ["openground-mcp"],
+      "enabled": false
+    }
+  }
+}
+```
+
+### Use Specific Virtual Environment
+
+Point to a specific Python environment:
+
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "local",
+      "command": ["/path/to/venv/bin/openground-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Environment Variables
+
+Pass custom environment variables:
+
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "local",
+      "command": ["openground-mcp"],
+      "enabled": true,
+      "env": {
+        "OPENGROUND_CONFIG": "/custom/path/config.json"
+      }
+    }
+  }
+}
+```
+
+### Multiple OpenGround Instances
+
+Run separate instances with different databases:
+
+```json
+{
+  "mcp": {
+    "openground-work": {
+      "type": "local",
+      "command": ["/work/venv/bin/openground-mcp"],
+      "enabled": true,
+      "env": {
+        "OPENGROUND_CONFIG": "~/.openground-work/config.json"
+      }
+    },
+    "openground-oss": {
+      "type": "local",
+      "command": ["/oss/venv/bin/openground-mcp"],
+      "enabled": true,
+      "env": {
+        "OPENGROUND_CONFIG": "~/.openground-oss/config.json"
+      }
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Configuration Not Applied
+
+<Steps>
+  <Step title="Verify File Location">
+    Confirm `opencode.json` exists at `~/.config/opencode/`
+  </Step>
+  <Step title="Check JSON Syntax">
+    Validate with:
+    ```bash
+    python -m json.tool ~/.config/opencode/opencode.json
+    ```
+  </Step>
+  <Step title="Restart OpenCode Completely">
+    Quit entirely (not just close window), then restart
+  </Step>
+</Steps>
+
+### Invalid JSON Error
+
+If OpenCode reports JSON errors:
+
+```bash
+# Restore from backup
+cp ~/.config/opencode/opencode.json.backup.YYYYMMDD_HHMMSS ~/.config/opencode/opencode.json
+
+# Re-run installer
+openground install-mcp --opencode
+```
+
+### Permission Denied
+
+Fix file permissions:
+
+```bash
+# Linux/macOS
+chmod 644 ~/.config/opencode/opencode.json
+
+# Windows: Right-click → Properties → Security → Edit
+```
+
+### Command Not Found
+
+<Steps>
+  <Step title="Verify Installation">
+    ```bash
+    which openground-mcp  # macOS/Linux
+    where openground-mcp  # Windows
+    ```
+  </Step>
+  <Step title="Use Full Path">
+    Edit `opencode.json` with full path:
+    ```json
+    {
+      "mcp": {
+        "openground": {
+          "type": "local",
+          "command": ["/full/path/to/openground-mcp"],
+          "enabled": true
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Check PATH">
+    Ensure Python bin/Scripts directory is in PATH
+  </Step>
+</Steps>
+
+### MCP Server Not Starting
+
+Debug the server:
+
+```bash
+# Test server manually
+openground-mcp
+# Should start without errors (Ctrl+C to exit)
+
+# Check OpenCode logs for error messages
+```
+
+### No Search Results
+
+Verify documentation:
+
+```bash
+# List libraries
+openground list-libraries
+
+# Add if needed
+openground add django --source https://github.com/django/django.git --docs-path docs -y
+```
+
+## Updating Configuration
+
+Re-run the installer to update:
+
+```bash
+openground install-mcp --opencode
+```
+
+The installer:
+1. Creates a new timestamped backup
+2. Preserves other MCP servers
+3. Updates only OpenGround configuration
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Libraries" icon="plus" href="/essentials/adding-libraries">
+    Index more documentation sources
+  </Card>
+  <Card title="Configure Search" icon="sliders" href="/advanced/configuration">
+    Customize embedding models and retrieval
+  </Card>
+  <Card title="MCP Overview" icon="book" href="/integration/mcp-overview">
+    Learn about MCP architecture
+  </Card>
+  <Card title="Custom Agents" icon="robot" href="/integration/custom-agents">
+    Use with other MCP clients
+  </Card>
+</CardGroup>

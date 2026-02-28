@@ -1,0 +1,318 @@
+---
+title: Configuration Reference
+description: Complete reference for OpenGround configuration options
+---
+
+Complete reference for all OpenGround configuration options. Configuration is stored in `~/.openground/config.json`.
+
+## Configuration File
+
+**Location:** `~/.openground/config.json`
+
+**Access:** 
+```bash
+openground config path  # Show path
+openground config show  # Show current config
+```
+
+## Top-Level Keys
+
+### db_path
+
+<ParamField path="db_path" type="string" default="~/.openground/lancedb">
+  Path to the LanceDB database directory. Stores vector embeddings and metadata.
+  
+  **Example:**
+  ```bash
+  openground config set db_path /custom/path/lancedb
+  ```
+</ParamField>
+
+### table_name
+
+<ParamField path="table_name" type="string" default="documents">
+  Name of the LanceDB table for storing documents.
+  
+  **Example:**
+  ```bash
+  openground config set table_name my_documents
+  ```
+</ParamField>
+
+### raw_data_dir
+
+<ParamField path="raw_data_dir" type="string" default="~/.openground/raw_data">
+  Directory for storing extracted documentation (JSON files) before embedding.
+  
+  **Structure:** `{raw_data_dir}/{library}/{version}/page_*.json`
+  
+  **Example:**
+  ```bash
+  openground config set raw_data_dir /mnt/data/openground/raw
+  ```
+</ParamField>
+
+## embeddings
+
+Embedding and chunking configuration.
+
+### embeddings.embedding_backend
+
+<ParamField path="embeddings.embedding_backend" type="string" default="sentence-transformers">
+  Embedding backend to use.
+  
+  **Valid values:**
+  - `sentence-transformers` - Full transformers library (more models)
+  - `fastembed` - Lightweight, optimized for speed
+  
+  **Validation:** Must be one of these two values.
+  
+  **Example:**
+  ```bash
+  openground config set embeddings.embedding_backend fastembed
+  ```
+</ParamField>
+
+### embeddings.model_name
+
+<ParamField path="embeddings.model_name" type="string" default="all-MiniLM-L6-v2">
+  Name of the embedding model to use.
+  
+  **Sentence-transformers models:**
+  - `all-MiniLM-L6-v2` (default, 384 dimensions)
+  - `all-mpnet-base-v2` (768 dimensions, higher quality)
+  - `multi-qa-MiniLM-L6-cos-v1` (optimized for questions)
+  
+  **FastEmbed models:**
+  - `BAAI/bge-small-en-v1.5` (384 dimensions)
+  - `BAAI/bge-base-en-v1.5` (768 dimensions)
+  - `sentence-transformers/all-MiniLM-L6-v2`
+  
+  **Note:** Changing this requires re-embedding all libraries.
+  
+  **Example:**
+  ```bash
+  openground config set embeddings.model_name all-mpnet-base-v2
+  ```
+</ParamField>
+
+### embeddings.chunk_size
+
+<ParamField path="embeddings.chunk_size" type="integer" default="512">
+  Maximum size of text chunks (in tokens/characters) for embedding.
+  
+  **Trade-offs:**
+  - **Smaller chunks (256-512):** More granular, better for specific queries
+  - **Larger chunks (1024-2048):** More context, better for broad topics
+  
+  **Recommended range:** 256 - 2048
+  
+  **Example:**
+  ```bash
+  openground config set embeddings.chunk_size 1024
+  ```
+</ParamField>
+
+### embeddings.chunk_overlap
+
+<ParamField path="embeddings.chunk_overlap" type="integer" default="128">
+  Number of overlapping tokens/characters between consecutive chunks.
+  
+  **Purpose:** Prevents information loss at chunk boundaries.
+  
+  **Recommended:** 20-25% of chunk_size
+  
+  **Example:**
+  ```bash
+  openground config set embeddings.chunk_overlap 256
+  ```
+</ParamField>
+
+## query
+
+Search and query configuration.
+
+### query.top_k
+
+<ParamField path="query.top_k" type="integer" default="5">
+  Number of results to return from queries by default.
+  
+  **Can be overridden:** Using `--top-k` flag in `openground query`
+  
+  **Recommended range:** 3 - 20
+  
+  **Example:**
+  ```bash
+  openground config set query.top_k 10
+  ```
+</ParamField>
+
+## extraction
+
+Extraction and scraping configuration.
+
+### extraction.concurrency_limit
+
+<ParamField path="extraction.concurrency_limit" type="integer" default="10">
+  Maximum number of concurrent requests when extracting from sitemaps.
+  
+  **Trade-offs:**
+  - **Higher values:** Faster extraction, more memory/bandwidth
+  - **Lower values:** Slower extraction, less resource usage
+  
+  **Recommended range:** 5 - 50
+  
+  **Example:**
+  ```bash
+  openground config set extraction.concurrency_limit 20
+  ```
+</ParamField>
+
+## sources
+
+Source management configuration.
+
+### sources.auto_add_local
+
+<ParamField path="sources.auto_add_local" type="boolean" default="true">
+  Automatically add sources to `~/.openground/sources.json` when using `openground add` with `--source` flag.
+  
+  **When enabled:** Source configs are saved for future use
+  
+  **When disabled:** Must provide `--source` every time
+  
+  **Example:**
+  ```bash
+  openground config set sources.auto_add_local false
+  ```
+</ParamField>
+
+### sources.file_path
+
+<ParamField path="sources.file_path" type="string" default="~/.openground/sources.json">
+  Path to the sources configuration file.
+  
+  **Use case:** Custom location for source definitions
+  
+  **Example:**
+  ```bash
+  openground config set sources.file_path /custom/sources.json
+  ```
+</ParamField>
+
+## Example Configuration
+
+```json
+{
+  "db_path": "~/.openground/lancedb",
+  "table_name": "documents",
+  "raw_data_dir": "~/.openground/raw_data",
+  "embeddings": {
+    "embedding_backend": "sentence-transformers",
+    "model_name": "all-MiniLM-L6-v2",
+    "chunk_size": 512,
+    "chunk_overlap": 128
+  },
+  "query": {
+    "top_k": 5
+  },
+  "extraction": {
+    "concurrency_limit": 10
+  },
+  "sources": {
+    "auto_add_local": true,
+    "file_path": "~/.openground/sources.json"
+  }
+}
+```
+
+## Common Configurations
+
+### High-Quality Embeddings
+
+Better semantic understanding, slower, more disk space:
+
+```bash
+openground config set embeddings.model_name all-mpnet-base-v2
+openground config set embeddings.chunk_size 1024
+openground config set embeddings.chunk_overlap 256
+```
+
+### Fast and Lightweight
+
+Faster extraction and queries, less disk space:
+
+```bash
+openground config set embeddings.embedding_backend fastembed
+openground config set embeddings.model_name BAAI/bge-small-en-v1.5
+openground config set extraction.concurrency_limit 20
+```
+
+### Large Context
+
+Better for documentation with long-form content:
+
+```bash
+openground config set embeddings.chunk_size 2048
+openground config set embeddings.chunk_overlap 512
+openground config set query.top_k 3
+```
+
+### Detailed Queries
+
+More results, better for exploration:
+
+```bash
+openground config set query.top_k 15
+openground config set embeddings.chunk_size 256
+```
+
+## Changing Settings
+
+### View Current Value
+
+```bash
+openground config get embeddings.chunk_size
+```
+
+### Change a Value
+
+```bash
+openground config set embeddings.chunk_size 1024
+```
+
+### Reset to Defaults
+
+```bash
+openground config reset
+```
+
+## When Changes Take Effect
+
+| Setting | Takes Effect |
+|---------|-------------|
+| `db_path`, `table_name`, `raw_data_dir` | Immediately (affects new operations) |
+| `embeddings.*` | **Requires re-embedding** existing libraries |
+| `query.top_k` | Immediately (or use `--top-k` flag) |
+| `extraction.concurrency_limit` | Next extraction |
+| `sources.*` | Immediately |
+
+### Re-embedding After Embedding Changes
+
+If you change embedding settings, you must re-embed:
+
+```bash
+# Delete old embeddings
+openground nuke embeddings -y
+
+# Re-embed all libraries
+for lib in $(openground list-raw-libraries | awk '{print $1}' | tail -n +2); do
+  openground embed $lib
+done
+```
+
+## Related Commands
+
+- [openground config](/cli/config) - Manage configuration
+- [openground nuke](/cli/nuke) - Delete data when changing embeddings
+- [openground add](/cli/add) - Add documentation

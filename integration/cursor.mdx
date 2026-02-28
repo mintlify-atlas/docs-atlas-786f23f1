@@ -1,0 +1,476 @@
+---
+title: Cursor Integration
+description: Configure OpenGround MCP server in Cursor by modifying mcp.json
+---
+
+# Cursor Integration
+
+Integrate OpenGround with Cursor to search documentation directly within your IDE conversations.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Install OpenGround">
+    ```bash
+    pip install openground
+    ```
+  </Step>
+  <Step title="Add Documentation">
+    Index at least one library:
+    ```bash
+    openground add react --source https://github.com/facebook/react.git --docs-path docs -y
+    ```
+  </Step>
+  <Step title="Install Cursor">
+    Download from [cursor.sh](https://cursor.sh)
+  </Step>
+</Steps>
+
+## Installation
+
+### Automatic Installation (Recommended)
+
+OpenGround provides an automatic installer that safely modifies Cursor's MCP configuration:
+
+```bash
+openground install-mcp --cursor
+```
+
+This command:
+1. Locates your Cursor config directory
+2. Creates a backup of existing `mcp.json` (if it exists)
+3. Safely merges the OpenGround server configuration
+4. Validates the JSON before writing
+
+<Check>**Success!** You should see: "Successfully installed openground to Cursor!"</Check>
+
+### What Gets Configured
+
+The installer adds this configuration to your `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp"
+    }
+  }
+}
+```
+
+If you already have other MCP servers configured, they will be preserved.
+
+### Configuration File Locations
+
+Cursor's MCP configuration is stored at platform-specific locations:
+
+<Tabs>
+  <Tab title="macOS">
+    ```bash
+    ~/.cursor/mcp.json
+    ```
+  </Tab>
+  <Tab title="Linux">
+    ```bash
+    ~/.cursor/mcp.json
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    %APPDATA%\Cursor\mcp.json
+    ```
+    
+    Typically:
+    ```
+    C:\Users\YourUsername\AppData\Roaming\Cursor\mcp.json
+    ```
+  </Tab>
+</Tabs>
+
+### Manual Installation
+
+If you prefer to edit the configuration manually:
+
+<Steps>
+  <Step title="Generate Configuration">
+    ```bash
+    openground install-mcp
+    ```
+    This displays the JSON configuration without modifying any files
+  </Step>
+  <Step title="Locate Cursor Config">
+    Navigate to your platform's config directory (see locations above)
+  </Step>
+  <Step title="Edit mcp.json">
+    Create or edit the `mcp.json` file:
+    
+    ```json
+    {
+      "mcpServers": {
+        "openground": {
+          "command": "openground-mcp"
+        }
+      }
+    }
+    ```
+    
+    If you have existing servers, add `openground` to the `mcpServers` object:
+    
+    ```json
+    {
+      "mcpServers": {
+        "existing-server": {
+          "command": "some-other-command"
+        },
+        "openground": {
+          "command": "openground-mcp"
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Validate JSON">
+    Ensure your JSON is valid (no trailing commas, proper quotes)
+  </Step>
+</Steps>
+
+## Configuration Details
+
+### Command Resolution
+
+The installer automatically resolves the full path to `openground-mcp`:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/usr/local/bin/openground-mcp"
+    }
+  }
+}
+```
+
+If the command is not in your PATH, the full path will be used automatically.
+
+### Transport Protocol
+
+OpenGround uses **stdio** transport:
+- Cursor spawns `openground-mcp` as a subprocess
+- Communication via stdin/stdout
+- No network ports or authentication needed
+
+### Backup Files
+
+The automatic installer creates timestamped backups:
+
+```bash
+~/.cursor/mcp.json.backup.20240228_143022
+```
+
+You can restore from a backup if needed:
+
+```bash
+cp ~/.cursor/mcp.json.backup.YYYYMMDD_HHMMSS ~/.cursor/mcp.json
+```
+
+## Verification
+
+<Steps>
+  <Step title="Restart Cursor">
+    Completely quit and restart Cursor
+  </Step>
+  <Step title="Open Cursor Chat">
+    Start a new chat conversation
+  </Step>
+  <Step title="Test OpenGround Tools">
+    Ask: "What documentation libraries are available in openground?"
+    
+    Cursor should call the `list_libraries_tool` and display your indexed libraries
+  </Step>
+</Steps>
+
+## Using OpenGround in Cursor
+
+### Automatic Usage
+
+Cursor will automatically invoke OpenGround tools when relevant:
+
+```
+You: How do I fetch data in React?
+
+Cursor: Let me check the React documentation...
+[Calls mcp__openground__search_documents_tool]
+
+According to the React documentation:
+...
+```
+
+### Explicit Requests
+
+You can explicitly ask Cursor to search documentation:
+
+```
+You: Search openground for FastAPI routing examples
+
+Cursor: [Searches FastAPI documentation using OpenGround]
+```
+
+### Code Context + Documentation
+
+Cursor can combine your code context with OpenGround documentation:
+
+```
+You: I'm using this FastAPI route, is this the correct pattern?
+[paste code]
+
+Cursor: [Analyzes your code + searches FastAPI docs for best practices]
+```
+
+## Platform-Specific Configuration
+
+### macOS
+
+No special configuration needed. OpenGround should work out of the box after installation.
+
+### Linux
+
+Ensure pip's bin directory is in your PATH:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+
+# Reload shell
+source ~/.bashrc
+```
+
+Verify command is available:
+```bash
+which openground-mcp
+```
+
+### Windows
+
+<Tabs>
+  <Tab title="Standard Installation">
+    Ensure Python Scripts directory is in your PATH:
+    
+    ```powershell
+    # Check if command is available
+    where openground-mcp
+    ```
+    
+    If not found, add to PATH:
+    ```
+    C:\Users\YourUsername\AppData\Local\Programs\Python\Python311\Scripts
+    ```
+    
+    Then run the installer:
+    ```powershell
+    openground install-mcp --cursor
+    ```
+  </Tab>
+  <Tab title="WSL Installation">
+    If you have OpenGround installed in WSL but run Cursor on Windows:
+    
+    <Steps>
+      <Step title="Generate WSL Config">
+        ```bash
+        openground install-mcp --wsl
+        ```
+      </Step>
+      <Step title="Copy Configuration">
+        Copy the generated JSON to Windows:
+        ```
+        %APPDATA%\Cursor\mcp.json
+        ```
+        
+        Example configuration:
+        ```json
+        {
+          "mcpServers": {
+            "openground": {
+              "command": "wsl.exe",
+              "args": ["openground-mcp"]
+            }
+          }
+        }
+        ```
+      </Step>
+      <Step title="Restart Cursor">
+        Quit and restart Cursor completely
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Advanced Configuration
+
+### Using Specific Python Environment
+
+If you need to use a specific Python environment:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/path/to/venv/bin/openground-mcp"
+    }
+  }
+}
+```
+
+### Environment Variables
+
+You can pass environment variables to the MCP server:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp",
+      "env": {
+        "OPENGROUND_CONFIG": "/custom/path/config.json"
+      }
+    }
+  }
+}
+```
+
+### Multiple OpenGround Instances
+
+Run separate OpenGround instances with different configurations:
+
+```json
+{
+  "mcpServers": {
+    "openground-work": {
+      "command": "/path/to/work-venv/bin/openground-mcp",
+      "env": {
+        "OPENGROUND_CONFIG": "~/.openground-work/config.json"
+      }
+    },
+    "openground-personal": {
+      "command": "/path/to/personal-venv/bin/openground-mcp",
+      "env": {
+        "OPENGROUND_CONFIG": "~/.openground-personal/config.json"
+      }
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Configuration Not Applied
+
+<Steps>
+  <Step title="Verify File Location">
+    Confirm `mcp.json` is in the correct directory for your platform
+  </Step>
+  <Step title="Check JSON Syntax">
+    Validate JSON using a linter or:
+    ```bash
+    python -m json.tool ~/.cursor/mcp.json
+    ```
+  </Step>
+  <Step title="Restart Cursor Completely">
+    Quit Cursor entirely (not just close window), then restart
+  </Step>
+</Steps>
+
+### Invalid JSON Error
+
+If Cursor reports invalid JSON:
+
+1. Restore from backup:
+   ```bash
+   cp ~/.cursor/mcp.json.backup.YYYYMMDD_HHMMSS ~/.cursor/mcp.json
+   ```
+
+2. Re-run the installer:
+   ```bash
+   openground install-mcp --cursor
+   ```
+
+### Permission Denied
+
+If the installer reports permission errors:
+
+```bash
+# Linux/macOS
+chmod 644 ~/.cursor/mcp.json
+
+# Windows: Right-click file → Properties → Security → Edit permissions
+```
+
+### Command Not Found
+
+If Cursor reports `openground-mcp` not found:
+
+<Steps>
+  <Step title="Verify Installation">
+    ```bash
+    which openground-mcp  # macOS/Linux
+    where openground-mcp  # Windows
+    ```
+  </Step>
+  <Step title="Use Full Path">
+    Edit `mcp.json` to use the full path:
+    ```json
+    {
+      "mcpServers": {
+        "openground": {
+          "command": "/full/path/to/openground-mcp"
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Restart Cursor">
+    Completely quit and restart
+  </Step>
+</Steps>
+
+### No Search Results
+
+Verify documentation is indexed:
+
+```bash
+# Check available libraries
+openground list-libraries
+
+# Add documentation if needed
+openground add fastapi --source https://github.com/tiangolo/fastapi.git --docs-path docs -y
+```
+
+## Updating Configuration
+
+To update your OpenGround configuration:
+
+```bash
+# Re-run the installer (creates new backup)
+openground install-mcp --cursor
+```
+
+The installer automatically:
+1. Creates a new timestamped backup
+2. Preserves existing MCP servers
+3. Updates only the OpenGround configuration
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Libraries" icon="plus" href="/essentials/adding-libraries">
+    Index more documentation sources
+  </Card>
+  <Card title="Configure Search" icon="sliders" href="/advanced/configuration">
+    Customize embedding models and search behavior
+  </Card>
+  <Card title="MCP Overview" icon="book" href="/integration/mcp-overview">
+    Learn more about MCP architecture
+  </Card>
+  <Card title="Custom Agents" icon="robot" href="/integration/custom-agents">
+    Use with other MCP-compatible clients
+  </Card>
+</CardGroup>

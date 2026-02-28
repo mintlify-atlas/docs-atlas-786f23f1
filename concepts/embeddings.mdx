@@ -1,0 +1,620 @@
+---
+title: Embeddings
+description: Understanding embedding backends, models, dimensions, and how OpenGround converts text to vectors
+---
+
+Embeddings are the core of OpenGround's semantic search. They transform text chunks into numerical vectors that capture meaning, enabling the system to find relevant documentation even when query words don't exactly match.
+
+## What Are Embeddings?
+
+An embedding is a dense vector representation of text. Similar concepts have vectors that are close together in high-dimensional space.
+
+```python
+# Example (simplified)
+"how to install package"  → [0.23, -0.15, 0.87, ...] (384 dimensions)
+"package installation"    → [0.25, -0.14, 0.89, ...] (similar vector)
+"weather forecast"        → [-0.42, 0.76, -0.12, ...] (different vector)
+```
+
+OpenGround uses **cosine similarity** to measure how close vectors are:
+- Score near 1.0 = very similar meaning
+- Score near 0.0 = unrelated
+
+## Embedding Backends
+
+OpenGround supports two embedding backends with different trade-offs:
+
+<CardGroup cols={2}>
+  <Card title="FastEmbed" icon="bolt">
+    **Default** - Lightweight, ONNX-based
+    
+    - Smaller install size
+    - CPU-optimized by default
+    - Optional GPU support (experimental)
+    - Fastest for CPU inference
+  </Card>
+  
+  <Card title="Sentence-Transformers" icon="microchip">
+    **Full-featured** - PyTorch-based
+    
+    - Larger install size
+    - Automatic GPU/MPS detection
+    - Better GPU performance
+    - More model options
+  </Card>
+</CardGroup>
+
+### Backend Selection
+
+From `config.py:62`, the default backend:
+
+```python
+DEFAULT_EMBEDDING_BACKEND = "fastembed"
+```
+
+Change it with:
+
+```bash
+openground config set embeddings.embedding_backend sentence-transformers
+```
+
+### FastEmbed Backend
+
+FastEmbed uses **ONNX Runtime** for inference (from `embeddings.py:93-116`):
+
+```python
+@lru_cache(maxsize=1)
+def get_fastembed_model(model_name: str, use_cuda: bool = True):
+    """Get a cached instance of TextEmbedding (fastembed)."""
+    from fastembed import TextEmbedding
+    
+    if use_cuda:
+        try:
+            return TextEmbedding(
+                model_name=model_name,
+                providers=["CUDAExecutionProvider"],
+            )
+        except ValueError:
+            check_gpu_compatibility()
+    
+    return TextEmbedding(
+        model_name=model_name,
+        providers=["CPUExecutionProvider"],
+    )
+```
+
+<Info>
+ONNX (Open Neural Network Exchange) is an optimized runtime for neural networks. FastEmbed converts PyTorch models to ONNX for faster CPU inference.
+</Info>
+
+#### Installation Options
+
+<CodeGroup>
+```bash CPU (Lightweight)
+# Smallest install, CPU-only
+uv tool install 'openground[fastembed]'
+pip install 'openground[fastembed]'
+```
+
+```bash GPU (Experimental)
+# CUDA GPU support via ONNX Runtime
+uv tool install 'openground[fastembed-gpu]'
+pip install 'openground[fastembed-gpu]'
+```
+</CodeGroup>
+
+<Warning>
+GPU support requires matching CUDA drivers and cuDNN versions. See [ONNX Runtime CUDA docs](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html) for requirements.
+</Warning>
+
+#### GPU Compatibility Check
+
+OpenGround automatically detects GPU availability (from `embeddings.py:44-90`):
+
+```python
+def check_gpu_compatibility() -> None:
+    """Check for GPU compatibility and provide optimization tips."""
+    gpu_hardware = is_gpu_hardware_available()  # nvidia-smi check
+    
+    # Check if fastembed-gpu is installed
+    has_gpu_pkg = False
+    try:
+        version("fastembed-gpu")
+        has_gpu_pkg = True
+    except PackageNotFoundError:
+        pass
+    
+    # Check for functional GPU via onnxruntime
+    functional_gpu = False
+    try:
+        import onnxruntime as ort
+        functional_gpu = "CUDAExecutionProvider" in ort.get_available_providers()
+    except ImportError:
+        pass
+    
+    # Provide helpful hints
+    if gpu_hardware and not has_gpu_pkg:
+        hint("GPU detected! Install the GPU version for faster performance:")
+        hint("   uv tool install 'openground[fastembed-gpu]'\n")
+    
+    elif gpu_hardware and has_gpu_pkg and not functional_gpu:
+        error("GPU package is installed but CUDA is not functional.")
+        # Suggest fixes...
+```
+
+### Sentence-Transformers Backend
+
+Sentence-Transformers uses **PyTorch** with automatic hardware acceleration (from `embeddings.py:14-25`):
+
+```python
+@lru_cache(maxsize=1)
+def get_st_model(model_name: str):
+    """Get a cached instance of SentenceTransformer."""
+    from sentence_transformers import SentenceTransformer
+    
+    # Automatically uses:
+    # - CUDA on NVIDIA GPUs
+    # - MPS on Apple Silicon
+    # - CPU otherwise
+    return SentenceTransformer(model_name)
+```
+
+#### Installation
+
+<CodeGroup>
+```bash Default (Auto-detect)
+# Automatically uses GPU if available
+uv tool install openground
+pip install openground
+```
+
+```bash Explicit
+uv tool install 'openground[sentence-transformers]'
+pip install 'openground[sentence-transformers]'
+```
+</CodeGroup>
+
+<Tip>
+The default `openground` package includes sentence-transformers with automatic GPU/MPS/CPU support. This is the easiest option if you have a GPU.
+</Tip>
+
+## Embedding Models
+
+From `config.py:58-60`, the default model:
+
+```python
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_EMBEDDING_DIMENSIONS = 384
+```
+
+### Why BGE-Small-EN-v1.5?
+
+- **Multilingual**: Good English performance
+- **Compact**: 384 dimensions (vs 768 for larger models)
+- **Fast**: Smaller vectors = faster search
+- **Quality**: Strong performance on MTEB benchmarks
+
+### Changing Models
+
+<Warning>
+**Important**: Changing the embedding model requires re-embedding all documentation. Models are not compatible with each other.
+</Warning>
+
+<Steps>
+  <Step title="Choose a Model">
+    Browse models on Hugging Face:
+    - [sentence-transformers models](https://huggingface.co/models?library=sentence-transformers)
+    - [FastEmbed supported models](https://qdrant.github.io/fastembed/examples/Supported_Models/)
+    
+    Look for:
+    - **Dimensions**: 384-768 (smaller = faster)
+    - **Language**: Match your docs (multilingual, en, etc.)
+    - **Size**: Smaller models = faster inference
+  </Step>
+  
+  <Step title="Update Configuration">
+    ```bash
+    # Set model and dimensions
+    openground config set embeddings.embedding_model "sentence-transformers/all-MiniLM-L6-v2"
+    openground config set embeddings.embedding_dimensions 384
+    ```
+  </Step>
+  
+  <Step title="Delete Existing Embeddings">
+    ```bash
+    # Remove all embedded data
+    openground nuke embeddings
+    ```
+    
+    This deletes the LanceDB table but preserves raw documentation.
+  </Step>
+  
+  <Step title="Re-embed Documentation">
+    ```bash
+    # Re-embed all libraries
+    openground embed
+    ```
+    
+    This processes all raw data with the new model.
+  </Step>
+</Steps>
+
+### Model Compatibility Validation
+
+OpenGround stores embedding metadata in the LanceDB schema (from `ingest.py:159-177`):
+
+```python
+schema = pa.schema(
+    [
+        # ... fields ...
+        pa.field("vector", pa.list_(pa.float32(), embedding_dimensions)),
+    ],
+    metadata={
+        "embedding_backend": embedding_backend,
+        "embedding_model": embedding_model,
+    }
+)
+```
+
+When adding new documentation, OpenGround validates the model matches (from `ingest.py:111-142`):
+
+```python
+def _validate_table_metadata(table: Table, backend: str, model: str) -> None:
+    stored_metadata = _get_table_metadata(table)
+    stored_backend = stored_metadata["embedding_backend"]
+    stored_model = stored_metadata["embedding_model"]
+    
+    if stored_backend != backend or stored_model != model:
+        raise ValueError(
+            f"Embedding configuration mismatch detected!\n\n"
+            f"This table was created with:\n"
+            f"  Backend: {stored_backend}\n"
+            f"  Model: {stored_model}\n\n"
+            f"Current configuration is:\n"
+            f"  Backend: {backend}\n"
+            f"  Model: {model}\n\n"
+            f"To resolve this, you can:\n"
+            f"  1. Change your config to match the table's original settings\n"
+            f"  2. Run `openground nuke embeddings` and then `openground embed`\n"
+        )
+```
+
+<Info>
+This prevents mixing embeddings from different models, which would break search quality.
+</Info>
+
+## Embedding Generation
+
+From `embeddings.py:207-234`, the main generation function:
+
+```python
+def generate_embeddings(
+    texts: Iterable[str],
+    show_progress: bool = True,
+) -> list[list[float]]:
+    """Generate embeddings for documents using the specified backend."""
+    
+    config = get_effective_config()
+    backend = config["embeddings"]["embedding_backend"]
+    
+    if backend == "fastembed":
+        return _generate_embeddings_fastembed(texts, show_progress)
+    elif backend == "sentence-transformers":
+        return _generate_embeddings_sentence_transformers(texts, show_progress)
+    else:
+        raise ValueError(f"Invalid embedding backend: {backend}")
+```
+
+### Batch Processing
+
+Both backends process embeddings in batches for efficiency (from `config.py:65`):
+
+```python
+DEFAULT_BATCH_SIZE = 32
+```
+
+From `embeddings.py:119-160` (sentence-transformers example):
+
+```python
+def _generate_embeddings_sentence_transformers(
+    texts: Iterable[str],
+    show_progress: bool = True,
+) -> list[list[float]]:
+    config = get_effective_config()
+    batch_size = config["embeddings"]["batch_size"]  # 32
+    model_name = config["embeddings"]["embedding_model"]
+    model = get_st_model(model_name)
+    
+    texts_list = list(texts)
+    all_embeddings = []
+    
+    with tqdm(total=len(texts_list), desc="Generating embeddings") as pbar:
+        for i in range(0, len(texts_list), batch_size):
+            batch = texts_list[i : i + batch_size]
+            batch_embeddings = model.encode(
+                sentences=batch,
+                batch_size=len(batch),
+                normalize_embeddings=True,  # L2 normalization
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+            all_embeddings.extend(list(batch_embeddings))
+            pbar.update(len(batch))
+    
+    return all_embeddings
+```
+
+<Tip>
+Increase `batch_size` if you have a GPU with lots of VRAM:
+```bash
+openground config set embeddings.batch_size 64
+```
+</Tip>
+
+### FastEmbed Passage Embedding
+
+FastEmbed distinguishes between **passage** (document) and **query** embeddings (from `embeddings.py:163-204`):
+
+```python
+def _generate_embeddings_fastembed(
+    texts: Iterable[str],
+    show_progress: bool = True,
+) -> list[list[float]]:
+    # ...
+    model = get_fastembed_model(model_name)
+    
+    for i in range(0, len(texts_list), batch_size):
+        batch = texts_list[i : i + batch_size]
+        # Use passage_embed for document chunks
+        batch_embeddings = list(model.passage_embed(batch))
+        all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
+```
+
+<Info>
+Some models are trained differently for documents vs. queries. FastEmbed uses `passage_embed()` for document chunks and would use `query_embed()` for search queries (though OpenGround currently uses `passage_embed` for both).
+</Info>
+
+## Embedding Dimensions
+
+From `config.py:60`:
+
+```python
+DEFAULT_EMBEDDING_DIMENSIONS = 384
+```
+
+Dimension count affects:
+
+<Tabs>
+  <Tab title="Storage Size">
+    Each vector = `dimensions × 4 bytes` (float32)
+    
+    ```python
+    # 384 dimensions
+    384 × 4 bytes = 1,536 bytes per vector
+    
+    # 768 dimensions (larger model)
+    768 × 4 bytes = 3,072 bytes per vector (2x storage)
+    
+    # For 10,000 chunks:
+    384-dim: ~15 MB
+    768-dim: ~30 MB
+    ```
+  </Tab>
+  
+  <Tab title="Search Speed">
+    More dimensions = slower cosine similarity calculation
+    
+    ```python
+    # Cosine similarity computation
+    def cosine_sim(a, b):
+        return dot(a, b) / (norm(a) * norm(b))
+        # O(n) where n = dimensions
+    
+    # 384-dim: faster
+    # 768-dim: ~2x slower
+    ```
+  </Tab>
+  
+  <Tab title="Quality">
+    More dimensions ≠ always better
+    
+    - Depends on model training
+    - 384-dim models can outperform 768-dim models
+    - Diminishing returns beyond 768
+    
+    Check MTEB benchmarks for comparison.
+  </Tab>
+</Tabs>
+
+<Note>
+**Rule of thumb**: Stick with the model's native dimensions. Don't try to change dimensions independently from the model.
+</Note>
+
+## Configuration Examples
+
+### Optimal CPU Performance
+
+```bash
+# Lightweight FastEmbed with small model
+openground config set embeddings.embedding_backend fastembed
+openground config set embeddings.embedding_model "BAAI/bge-small-en-v1.5"
+openground config set embeddings.embedding_dimensions 384
+openground config set embeddings.batch_size 32
+```
+
+### GPU Performance (NVIDIA)
+
+```bash
+# Sentence-Transformers with larger model
+openground config set embeddings.embedding_backend sentence-transformers
+openground config set embeddings.embedding_model "BAAI/bge-base-en-v1.5"
+openground config set embeddings.embedding_dimensions 768
+openground config set embeddings.batch_size 64  # Larger batches for GPU
+```
+
+### Apple Silicon (M1/M2/M3)
+
+```bash
+# Sentence-Transformers with MPS acceleration
+openground config set embeddings.embedding_backend sentence-transformers
+openground config set embeddings.embedding_model "BAAI/bge-small-en-v1.5"
+openground config set embeddings.embedding_dimensions 384
+openground config set embeddings.batch_size 32
+```
+
+<Tip>
+Apple Silicon automatically uses MPS (Metal Performance Shaders) via sentence-transformers. No special configuration needed.
+</Tip>
+
+## Chunking Strategy
+
+Before embedding, documents are split into chunks (from `config.py:66-67`):
+
+```python
+DEFAULT_CHUNK_SIZE = 800
+DEFAULT_CHUNK_OVERLAP = 200
+```
+
+From `ingest.py:52-76`, using LangChain's text splitter:
+
+```python
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+def chunk_document(page: ParsedPage) -> list[dict]:
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=800,
+        chunk_overlap=200
+    )
+    chunks = splitter.split_text(page["content"])
+    
+    for idx, chunk in enumerate(chunks):
+        records.append({
+            "content": chunk,
+            "chunk_index": idx,
+            # ... metadata ...
+        })
+```
+
+### Why 800 Characters?
+
+- **Context window**: Most embedding models handle 512 tokens well
+- **800 chars ≈ 200 tokens**: Safe margin for tokenization
+- **Not too small**: Preserves context
+- **Not too large**: Enables precise retrieval
+
+### Why 200 Character Overlap?
+
+```
+Chunk 1: [------------------------]  (chars 0-800)
+Chunk 2:              [------------------------]  (chars 600-1400)
+                      ^200 overlap^
+```
+
+Overlap ensures:
+- Information spanning boundaries isn't lost
+- Better retrieval for queries matching boundary content
+- 25% overlap provides good coverage without excessive duplication
+
+### Adjusting Chunking
+
+```bash
+# Larger chunks (more context, less precise)
+openground config set embeddings.chunk_size 1200
+openground config set embeddings.chunk_overlap 300
+
+# Smaller chunks (more precise, less context)
+openground config set embeddings.chunk_size 512
+openground config set embeddings.chunk_overlap 128
+```
+
+<Warning>
+Changing chunk settings requires re-embedding:
+```bash
+openground nuke embeddings
+openground embed
+```
+</Warning>
+
+## Model Caching
+
+Both backends use `@lru_cache` to load models once (from `embeddings.py:14` and `93`):
+
+```python
+@lru_cache(maxsize=1)
+def get_st_model(model_name: str):
+    return SentenceTransformer(model_name)
+
+@lru_cache(maxsize=1)
+def get_fastembed_model(model_name: str, use_cuda: bool = True):
+    return TextEmbedding(model_name=model_name, ...)
+```
+
+Models are:
+1. Downloaded from Hugging Face (first run)
+2. Cached locally in `~/.cache/huggingface/`
+3. Loaded into memory once per process
+4. Reused for all embedding operations
+
+<Tip>
+The first run downloads the model (~100-500MB depending on model). Subsequent runs are instant.
+</Tip>
+
+## Performance Comparison
+
+<Tabs>
+  <Tab title="FastEmbed CPU">
+    **Best for**: Most users, CPU-only machines
+    
+    - ~500 chunks/sec (CPU)
+    - Lightweight install
+    - Low memory usage
+    - No GPU setup hassle
+  </Tab>
+  
+  <Tab title="FastEmbed GPU">
+    **Best for**: Experimental CUDA users
+    
+    - ~2000 chunks/sec (GPU)
+    - Requires CUDA setup
+    - ONNX Runtime GPU support
+    - May have compatibility issues
+  </Tab>
+  
+  <Tab title="Sentence-Transformers GPU">
+    **Best for**: NVIDIA GPU users
+    
+    - ~3000 chunks/sec (GPU)
+    - Larger install
+    - Higher memory usage
+    - Stable PyTorch CUDA support
+  </Tab>
+  
+  <Tab title="Sentence-Transformers MPS">
+    **Best for**: Apple Silicon users
+    
+    - ~1500 chunks/sec (M1/M2/M3)
+    - Automatic MPS acceleration
+    - Good balance of speed/simplicity
+  </Tab>
+</Tabs>
+
+<Note>
+Performance varies by hardware. These are approximate estimates for the default model.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Search" icon="magnifying-glass" href="/concepts/search">
+    Learn how embeddings power hybrid search
+  </Card>
+  <Card title="Configuration" icon="gear" href="/guides/configuration">
+    Full configuration reference for embeddings
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    See where embeddings fit in the architecture
+  </Card>
+  <Card title="Update Documentation" icon="rotate" href="/guides/update">
+    Efficiently update docs with incremental re-embedding
+  </Card>
+</CardGroup>

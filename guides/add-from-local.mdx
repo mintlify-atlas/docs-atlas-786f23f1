@@ -1,0 +1,392 @@
+---
+title: "Adding Documentation from Local Directories"
+description: "Learn how to add and manage documentation from local file systems in OpenGround"
+---
+
+## Overview
+
+OpenGround can extract documentation from local directories on your file system. This is useful for:
+
+- Internal documentation not hosted online
+- Development versions of documentation
+- Offline documentation access
+- Custom documentation repositories
+
+## Supported File Types
+
+When extracting from local directories, OpenGround processes the following file extensions:
+
+- `.md` - Markdown
+- `.mdx` - MDX (Markdown with JSX)
+- `.rst` - reStructuredText
+- `.txt` - Plain text
+- `.ipynb` - Jupyter Notebooks
+- `.html` - HTML
+- `.htm` - HTML
+
+## Basic Usage
+
+<Steps>
+  <Step title="Add documentation from local path">
+    Use the `add` command with a local path:
+
+    ```bash
+    openground add library-name --source /path/to/docs -y
+    ```
+
+    The `-y` flag skips the confirmation prompt between extract and ingest.
+  </Step>
+
+  <Step title="Verify the library was added">
+    List all libraries in your database:
+
+    ```bash
+    openground list-libraries
+    # or
+    openground ls
+    ```
+  </Step>
+</Steps>
+
+## Path Types
+
+OpenGround supports multiple path formats:
+
+### Absolute Paths
+
+```bash
+# Unix/Linux/macOS
+openground add mylib --source /home/user/projects/mylib/docs -y
+
+# Windows
+openground add mylib --source C:\Users\user\projects\mylib\docs -y
+```
+
+### Home Directory Expansion
+
+```bash
+# Using ~ for home directory
+openground add mylib --source ~/projects/mylib/docs -y
+
+# Expands to /home/user/projects/mylib/docs (Unix)
+# or C:\Users\user\projects\mylib\docs (Windows)
+```
+
+### Relative Paths
+
+```bash
+# Relative to current directory
+openground add mylib --source ./docs -y
+openground add mylib --source ../other-project/docs -y
+
+# Without ./ prefix (also relative)
+openground add mylib --source docs -y
+```
+
+## Version Handling
+
+<Warning>
+  Local path sources automatically use **date-based versions** in the format `local-YYYY-MM-DD`.
+</Warning>
+
+The version is automatically generated based on the current date:
+
+```bash
+# Run on February 28, 2026
+openground add mylib --source ~/docs -y
+# Creates version: local-2026-02-28
+
+# Run on March 1, 2026
+openground add mylib --source ~/docs -y  
+# Creates version: local-2026-03-01
+```
+
+This allows you to track documentation changes over time:
+
+```bash
+# Query specific date version
+openground query "installation" --library mylib --version local-2026-02-28
+
+# List all versions
+openground list-libraries
+```
+
+<Note>
+  The `--version` flag is **ignored** for local path sources. The date-based version is always used.
+</Note>
+
+## Auto-Detection
+
+OpenGround automatically detects local paths based on these patterns:
+
+1. **Filesystem existence** - Path exists on disk (most reliable)
+2. **Absolute Unix paths** - Starts with `/`
+3. **Home directory** - Starts with `~`
+4. **Relative paths** - Starts with `./` or `../`
+5. **Windows paths**:
+   - Drive letter: `C:\`, `D:\`
+   - UNC paths: `\\server\share`
+   - Backslash paths: `\Users\...`
+
+```bash
+# All of these are auto-detected as local paths
+openground add lib1 --source /home/user/docs -y
+openground add lib2 --source ~/projects/lib2/docs -y
+openground add lib3 --source ./docs -y
+openground add lib4 --source ../other-lib/docs -y
+openground add lib5 --source C:\Projects\lib5\docs -y
+```
+
+## All Available Flags
+
+```bash
+openground add LIBRARY [OPTIONS]
+```
+
+### Arguments
+
+- `LIBRARY` - Name of the library (required)
+
+### Options
+
+- `--source, -s TEXT` - Local path to documentation directory
+- `--yes, -y` - Skip confirmation prompt between extract and ingest
+- `--sources-file TEXT` - Path to a custom sources.json file
+
+<Note>
+  The following flags are ignored for local path sources:
+  - `--version, -v` - Local paths use date-based versions
+  - `--docs-path, -d` - Not applicable to local paths
+  - `--filter-keyword, -f` - Not applicable to local paths
+  - `--trim-query-params` - Not applicable to local paths
+</Note>
+
+## Using Sources Files
+
+When you add documentation with `--source`, OpenGround automatically saves the configuration to `~/.openground/sources.json`:
+
+<Steps>
+  <Step title="First time: Add with source">
+    ```bash
+    openground add mylib --source ~/projects/mylib/docs -y
+    ```
+
+    This saves the local path to sources.json.
+  </Step>
+
+  <Step title="Later: Add by name only">
+    ```bash
+    # Uses saved path, creates new date-based version
+    openground add mylib -y
+    ```
+
+    The local path is retrieved from sources.json.
+  </Step>
+</Steps>
+
+See [Managing sources.json files](/guides/sources-files) for more details.
+
+## Updating Documentation
+
+Each time you run `add` with a local path, a new date-based version is created:
+
+```bash
+# Day 1: Creates local-2026-02-28
+openground add mylib --source ~/docs -y
+
+# Day 2: Creates local-2026-03-01 (new version)
+openground add mylib --source ~/docs -y
+
+# Or use the update command
+openground update mylib -y
+```
+
+To update the same day's version:
+
+```bash
+# First add today
+openground add mylib --source ~/docs -y
+# Version: local-2026-02-28
+
+# Later, same day - updates existing version
+openground add mylib --source ~/docs -y
+# Still version: local-2026-02-28, but with updated content
+```
+
+## Examples
+
+<CodeGroup>
+```bash Absolute Path
+# Unix/Linux/macOS
+openground add myproject \
+  --source /home/user/projects/myproject/docs \
+  -y
+
+# Windows
+openground add myproject \
+  --source "C:\Users\user\projects\myproject\docs" \
+  -y
+```
+
+```bash Home Directory
+openground add mylib \
+  --source ~/projects/mylib/documentation \
+  -y
+```
+
+```bash Relative Path
+# From project root
+cd /home/user/projects/myproject
+openground add myproject --source ./docs -y
+
+# From parent directory
+cd /home/user/projects
+openground add myproject --source myproject/docs -y
+```
+
+```bash From Sources File
+# After initial add, use name only
+openground add mylib -y
+```
+</CodeGroup>
+
+### Real-World Example: Internal Documentation
+
+```bash
+# Add company internal docs
+openground add internal-api \
+  --source ~/work/internal-api-docs \
+  -y
+
+# Query it
+openground query "authentication endpoints" --library internal-api
+```
+
+### Development Workflow
+
+```bash
+# Working on documentation locally
+cd ~/projects/awesome-lib
+
+# Add current docs
+openground add awesome-lib --source ./docs -y
+
+# Make changes to docs...
+# vim docs/getting-started.md
+
+# Re-add to update (same version if same day)
+openground add awesome-lib --source ./docs -y
+
+# Test queries
+openground query "getting started" --library awesome-lib
+```
+
+### Multiple Documentation Folders
+
+```bash
+# Add different projects
+openground add project-a --source ~/projects/project-a/docs -y
+openground add project-b --source ~/projects/project-b/docs -y
+openground add project-c --source ~/work/project-c/documentation -y
+
+# Query across all
+openground query "authentication"
+```
+
+## Best Practices
+
+### Use Absolute or Home Paths
+
+For sources.json reliability, prefer absolute or home directory paths over relative paths:
+
+```bash
+# Good: Works from any directory
+openground add mylib --source ~/projects/mylib/docs -y
+
+# Less good: Only works from specific directory
+openground add mylib --source ./docs -y
+```
+
+### Organize by Date Versions
+
+The automatic date versioning helps track documentation evolution:
+
+```bash
+# Week 1
+openground add mylib --source ~/docs -y  # local-2026-02-28
+
+# Week 2
+openground add mylib --source ~/docs -y  # local-2026-03-07
+
+# Compare versions
+openground query "API changes" --library mylib --version local-2026-02-28
+openground query "API changes" --library mylib --version local-2026-03-07
+```
+
+### Clean Up Old Versions
+
+Remove outdated versions to save space:
+
+```bash
+# List all versions
+openground list-libraries
+
+# Remove old version
+openground remove mylib --version local-2026-02-28 -y
+```
+
+## Troubleshooting
+
+### Path Not Found
+
+If OpenGround can't find your path:
+
+```bash
+# Check if path exists
+ls ~/projects/mylib/docs
+
+# Use absolute path
+openground add mylib --source /home/user/projects/mylib/docs -y
+
+# Check for typos
+pwd  # Print current directory
+ls   # List files
+```
+
+### Permission Denied
+
+Ensure OpenGround has read access:
+
+```bash
+# Check permissions
+ls -la ~/projects/mylib/docs
+
+# Fix permissions if needed
+chmod -R u+r ~/projects/mylib/docs
+```
+
+### No Files Found
+
+Verify your directory contains supported file types:
+
+```bash
+# Check for supported files
+find ~/projects/mylib/docs -type f \( -name "*.md" -o -name "*.mdx" -o -name "*.rst" \)
+
+# Supported: .md, .mdx, .rst, .txt, .ipynb, .html, .htm
+```
+
+### Windows Path Issues
+
+On Windows, use quotes for paths with spaces:
+
+```bash
+# Wrong
+openground add mylib --source C:\My Documents\docs -y
+
+# Correct
+openground add mylib --source "C:\My Documents\docs" -y
+
+# Or use forward slashes
+openground add mylib --source "C:/My Documents/docs" -y
+```

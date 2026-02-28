@@ -1,24 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "OpenGround",
+  "projectType": "cli-tool",
+  "projectName": "OpenGround",
+  "projectDescription": "On-device RAG system that extracts documentation from git repos and sitemaps, embeds it for semantic search, and exposes it to AI agents via MCP.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#2563eb",
-    "light": "#3b82f6",
-    "dark": "#1e40af"
-  },
-  "favicon": "/favicon.svg",
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/poweroutlet2/openground"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/poweroutlet2/openground"
-    }
-  },
+  "primaryColor": "#2563eb",
+  "lightColor": "#3b82f6",
+  "darkColor": "#1e40af",
   "navigation": {
     "tabs": [
       {
@@ -125,5 +112,30 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Extract documentation from git repos, sitemaps, and local directories",
+    "Local embedding using sentence-transformers or fastembed with GPU/CPU support",
+    "Hybrid vector similarity and BM25 full-text search with LanceDB",
+    "MCP server for seamless integration with AI coding agents",
+    "Multi-version support for libraries",
+    "Incremental updates with content hash detection",
+    "Sources file system for easy library management",
+    "Support for .md, .rst, .txt, .mdx, .ipynb, .html files"
+  ],
+  "publicApiSurface": [
+    "openground add - Add documentation from git/sitemap/local path",
+    "openground update - Update existing library documentation",
+    "openground query - Search documentation with hybrid search",
+    "openground list - List available libraries and versions",
+    "openground remove - Remove library version from database",
+    "openground install-mcp - Install MCP server for AI agents",
+    "openground config - Manage configuration settings",
+    "openground stats - View usage statistics",
+    "openground nuke - Delete all data",
+    "openground-mcp - MCP server entry point",
+    "search_documents_tool - MCP tool for semantic search",
+    "list_libraries_tool - MCP tool to list available docs",
+    "get_full_content_tool - MCP tool to retrieve full page content"
+  ]
 }

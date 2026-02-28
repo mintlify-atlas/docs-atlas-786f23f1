@@ -1,0 +1,255 @@
+---
+title: openground install-mcp
+description: Install OpenGround as an MCP server for AI agents
+---
+
+The `openground install-mcp` command generates and installs MCP (Model Context Protocol) server configuration for various AI agents.
+
+## Usage
+
+```bash
+openground install-mcp [OPTIONS]
+```
+
+## Options
+
+<ParamField path="--claude-code" type="boolean" default="false">
+  Automatically install to Claude Code using the `claude` CLI.
+  
+  **Requirements:** Claude Code CLI must be installed and available in PATH.
+</ParamField>
+
+<ParamField path="--cursor" type="boolean" default="false">
+  Automatically install to Cursor by modifying the MCP configuration file.
+  
+  **Config Location:**
+  - macOS: `~/.cursor/mcp.json`
+  - Linux: `~/.cursor/mcp.json`
+  - Windows: `%APPDATA%\Cursor\mcp.json`
+</ParamField>
+
+<ParamField path="--opencode" type="boolean" default="false">
+  Automatically install to OpenCode by modifying the configuration file.
+  
+  **Config Location:** `~/.config/opencode/opencode.json`
+</ParamField>
+
+<ParamField path="--wsl" type="boolean" default="false">
+  Generate WSL-compatible configuration (uses `wsl.exe` wrapper).
+  
+  **Note:** Only applicable when showing JSON output (no agent flag specified).
+</ParamField>
+
+## Behavior
+
+### Default (No Flags)
+
+Shows the MCP configuration JSON that you can manually copy:
+
+```bash
+openground install-mcp
+```
+
+**Output:**
+```
+------------ MCP Configuration ------------
+
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/usr/local/bin/openground-mcp"
+    }
+  }
+}
+
+-------------------------------------------
+
+Copy the JSON above into your MCP configuration file.
+Tip: Run `openground install-mcp --claude-code`, `openground install-mcp --cursor`, 
+     or `openground install-mcp --opencode` to automatically install.
+```
+
+### Automatic Installation
+
+When using agent-specific flags, the command:
+1. Creates a backup of existing configuration (timestamped)
+2. Reads current configuration
+3. Adds/updates the openground entry
+4. Writes atomically to prevent corruption
+5. Validates the JSON
+
+### Safety Features
+
+- **Backups:** Creates timestamped backups before modifying config files
+- **Validation:** Validates JSON before writing
+- **Atomic Writes:** Uses temporary files to prevent corruption
+- **Error Handling:** Provides clear error messages and recovery instructions
+
+## Examples
+
+### Install to Claude Code
+
+```bash
+openground install-mcp --claude-code
+```
+
+**Output:**
+```
+Removing existing openground MCP config if it exists...
+✓ Successfully installed openground to Claude Code!
+```
+
+**Requirements:**
+- Claude Code CLI must be installed: https://code.claude.com/docs/en/cli
+
+### Install to Cursor
+
+```bash
+openground install-mcp --cursor
+```
+
+**Output:**
+```
+Created backup: /home/user/.cursor/mcp.json.backup.20260228_143022
+✓ Successfully installed openground to Cursor!
+   Configuration written to: /home/user/.cursor/mcp.json
+ℹ Restart Cursor to apply changes.
+```
+
+### Install to OpenCode
+
+```bash
+openground install-mcp --opencode
+```
+
+**Output:**
+```
+Created backup: /home/user/.config/opencode/opencode.json.backup.20260228_143045
+✓ Successfully installed openground to OpenCode!
+   Configuration written to: /home/user/.config/opencode/opencode.json
+ℹ Restart OpenCode to apply changes.
+```
+
+### Generate WSL Configuration
+
+```bash
+openground install-mcp --wsl
+```
+
+**Output:**
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "wsl.exe",
+      "args": ["openground-mcp"]
+    }
+  }
+}
+```
+
+## Configuration Formats
+
+### Claude Code
+
+Uses the `claude` CLI:
+```bash
+claude mcp add --transport stdio --scope user openground -- openground-mcp
+```
+
+### Cursor
+
+JSON format in `~/.cursor/mcp.json`:
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/usr/local/bin/openground-mcp"
+    }
+  }
+}
+```
+
+### OpenCode
+
+JSON format in `~/.config/opencode/opencode.json`:
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "local",
+      "command": ["/usr/local/bin/openground-mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### WSL (Windows Subsystem for Linux)
+
+For running OpenGround in WSL from Windows:
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "wsl.exe",
+      "args": ["openground-mcp"]
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Claude Code: 'claude' CLI Not Found
+
+**Error:**
+```
+Error: 'claude' CLI not found in PATH.
+```
+
+**Solution:**
+1. Install Claude Code CLI: https://code.claude.com/docs/en/cli
+2. Or use manual installation: `openground install-mcp` (without flags)
+
+### Invalid JSON in Config File
+
+**Error:**
+```
+Error: /home/user/.cursor/mcp.json contains invalid JSON.
+   Parse error: Expecting property name enclosed in double quotes: line 5 column 3 (char 67)
+```
+
+**Solution:**
+1. Fix the JSON syntax manually
+2. Or delete the file and reinstall: `rm ~/.cursor/mcp.json && openground install-mcp --cursor`
+
+### Permission Denied
+
+**Error:**
+```
+Error: Permission denied writing to /home/user/.config/opencode/opencode.json
+```
+
+**Solution:**
+Check file permissions:
+```bash
+ls -la ~/.config/opencode/opencode.json
+chmod 644 ~/.config/opencode/opencode.json
+```
+
+## After Installation
+
+1. **Restart your agent** (Claude Code, Cursor, or OpenCode)
+2. **Verify installation:**
+   - Claude Code: `claude mcp list`
+   - Cursor/OpenCode: Check MCP settings in the UI
+3. **Test the connection:**
+   - Ask the agent to search your documentation
+   - Example: "Search my OpenAI docs for authentication"
+
+## Related Commands
+
+- [openground add](/cli/add) - Add documentation to search
+- [openground list](/cli/list) - View available libraries
+- [openground config](/cli/config) - Configure OpenGround

@@ -1,0 +1,184 @@
+---
+title: openground add
+description: Extract and ingest documentation from various sources
+---
+
+The `openground add` command extracts documentation from a source (sitemap, Git repository, or local path) and ingests it into the local vector database.
+
+## Usage
+
+```bash
+openground add <library> [OPTIONS]
+```
+
+## Arguments
+
+<ParamField path="library" type="string" required>
+  Name of the library (or source key if no source is provided)
+</ParamField>
+
+## Options
+
+<ParamField path="--source" type="string" default="None">
+  Root sitemap URL, Git repo URL, or local path to process.
+  
+  **Aliases:** `-s`
+  
+  Supports:
+  - Sitemap URLs (e.g., `https://example.com/sitemap.xml`)
+  - Git repository URLs (e.g., `https://github.com/user/repo.git`)
+  - GitHub/GitLab web URLs (e.g., `https://github.com/user/repo/tree/main/docs`)
+  - Local paths (e.g., `/path/to/docs`, `~/docs`, `./docs`)
+</ParamField>
+
+<ParamField path="--version" type="string" default="latest">
+  Version of the library to extract. Only works for git repos. Corresponds to the tag of the version in the git repo.
+  
+  **Aliases:** `-v`
+  
+  **Note:** Sitemap sources always use "latest". Local paths automatically generate date-based versions (e.g., `local-2026-02-28`).
+</ParamField>
+
+<ParamField path="--docs-path" type="list[string]" default="[]">
+  Path to documentation within a git repo. Specify multiple times for multiple paths.
+  
+  **Aliases:** `-d`
+  
+  If not specified, indexes the entire repository.
+  
+  **Example:**
+  ```bash
+  openground add mylib -s https://github.com/user/repo -d docs/ -d wiki/
+  ```
+</ParamField>
+
+<ParamField path="--filter-keyword" type="list[string]" default="[]">
+  String filter for sitemap URLs. Only used for sitemap sources. Can be specified multiple times.
+  
+  **Aliases:** `-f`
+  
+  **Example:**
+  ```bash
+  openground add mylib -s https://example.com/sitemap.xml -f docs -f /blog
+  ```
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt between extract and ingest.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+<ParamField path="--sources-file" type="string" default="None">
+  Path to a custom sources.json file. If not provided, checks config for `sources.file_path`, then uses default (`~/.openground/sources.json`).
+</ParamField>
+
+<ParamField path="--trim-query-params" type="boolean" default="false">
+  Trim query parameters from sitemap URLs to avoid duplicates.
+</ParamField>
+
+## Behavior
+
+### Source Detection
+
+The command automatically detects the source type:
+
+1. **Git Repository:** URLs containing `github.com` or `gitlab.com`
+2. **Sitemap:** URLs ending with `.xml` or containing "sitemap"
+3. **Local Path:** Paths starting with `/`, `~`, `./`, or `../`
+
+For git and local path sources, these file extensions are parsed: `.md`, `.rst`, `.txt`, `.mdx`, `.ipynb`, `.html`, `.htm`
+
+### Library Updates
+
+If the library already exists in the database, the command performs an incremental update:
+- **Added:** New pages from the source
+- **Modified:** Pages with changed content (detected via content hash)
+- **Deleted:** Pages removed from the source
+- **Unchanged:** Pages with identical content
+
+### Auto-Save to sources.json
+
+When you provide a `--source` directly (not from a sources file), the configuration is automatically saved to `~/.openground/sources.json` for future use. Disable this with:
+
+```bash
+openground config set sources.auto_add_local false
+```
+
+## Examples
+
+### Add from Sitemap
+
+```bash
+openground add myframework -s https://docs.example.com/sitemap.xml
+```
+
+### Add from GitHub Repository
+
+```bash
+openground add mylib -s https://github.com/user/repo -v v1.2.0 -d docs/
+```
+
+### Add from Local Path
+
+```bash
+openground add myproject -s ~/projects/myproject/docs
+```
+
+### Add with Filter Keywords (Sitemap Only)
+
+```bash
+openground add langchain -s https://python.langchain.com/sitemap.xml -f /docs/
+```
+
+### Add from sources.json
+
+If your library is already configured in `~/.openground/sources.json`:
+
+```bash
+openground add langchain
+```
+
+### Skip Confirmation Prompt
+
+```bash
+openground add mylib -s https://github.com/user/repo -y
+```
+
+## Output Example
+
+```
+Using sources file: /home/user/.openground/sources.json
+
+✓ Extraction complete: 142 pages extracted to /home/user/.openground/raw_data/mylib/latest
+
+Press Enter to continue with embedding, or Ctrl+C to exit...
+
+✓ Embedding complete: Library mylib (latest) added to LanceDB.
+✓ Added source for 'mylib' to ~/.openground/sources.json
+ℹ Tip: Disable automatic addition to user sources by running:
+    openground config set sources.auto_add_local false
+```
+
+## Update Example
+
+```
+Library 'mylib' version 'latest' already exists.
+Performing extraction and incremental update...
+
+✓ Extraction complete: 145 pages extracted to /home/user/.openground/raw_data/mylib/latest
+
+Update Summary:
+  Added: 3 pages
+  Modified: 2 pages
+  Deleted: 0 pages
+  Unchanged: 137 pages
+
+✓ Update complete: mylib (latest) updated.
+```
+
+## Related Commands
+
+- [openground update](/cli/update) - Alias for updating existing libraries
+- [openground list](/cli/list) - View installed libraries
+- [openground query](/cli/query) - Search the documentation

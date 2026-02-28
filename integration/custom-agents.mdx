@@ -1,0 +1,530 @@
+---
+title: Custom Agent Integration
+description: Configure OpenGround MCP server for other AI agents and custom clients
+---
+
+# Custom Agent Integration
+
+Integrate OpenGround with any MCP-compatible client using manual configuration.
+
+## Overview
+
+OpenGround implements the Model Context Protocol (MCP) standard, making it compatible with any MCP client. This guide covers manual configuration for clients not covered by the automatic installers.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Install OpenGround">
+    ```bash
+    pip install openground
+    ```
+  </Step>
+  <Step title="Verify MCP Server">
+    Test the server runs:
+    ```bash
+    openground-mcp
+    ```
+    Press `Ctrl+C` to exit
+  </Step>
+  <Step title="Add Documentation">
+    Index at least one library:
+    ```bash
+    openground add fastapi --source https://github.com/tiangolo/fastapi.git --docs-path docs -y
+    ```
+  </Step>
+</Steps>
+
+## Generate Configuration
+
+OpenGround provides a configuration generator:
+
+```bash
+openground install-mcp
+```
+
+<Accordion title="Example Output">
+```
+------------------ MCP Configuration ------------------
+
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp"
+    }
+  }
+}
+
+-------------------------------------------------------
+
+Copy the JSON above into your MCP configuration file.
+Tip: Run `openground install-mcp --claude-code`, `openground install-mcp --cursor`, 
+or `openground install-mcp --opencode` to automatically install.
+```
+</Accordion>
+
+## Standard MCP Configuration
+
+Most MCP clients use a similar configuration structure:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp"
+    }
+  }
+}
+```
+
+### Configuration Options
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Path to `openground-mcp` executable |
+| `args` | array | Optional command-line arguments |
+| `env` | object | Optional environment variables |
+
+### Full Path Configuration
+
+For reliability, use the absolute path to `openground-mcp`:
+
+<Tabs>
+  <Tab title="macOS/Linux">
+    ```bash
+    # Find the path
+    which openground-mcp
+    # Output: /usr/local/bin/openground-mcp
+    ```
+    
+    Configuration:
+    ```json
+    {
+      "mcpServers": {
+        "openground": {
+          "command": "/usr/local/bin/openground-mcp"
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    # Find the path
+    where openground-mcp
+    # Output: C:\Python311\Scripts\openground-mcp.exe
+    ```
+    
+    Configuration:
+    ```json
+    {
+      "mcpServers": {
+        "openground": {
+          "command": "C:\\Python311\\Scripts\\openground-mcp.exe"
+        }
+      }
+    }
+    ```
+    
+    **Note:** Escape backslashes in JSON (`\\`)
+  </Tab>
+</Tabs>
+
+## Platform-Specific Configuration
+
+### Windows Subsystem for Linux (WSL)
+
+If your client runs on Windows but OpenGround is in WSL:
+
+```bash
+# In WSL, generate WSL config
+openground install-mcp --wsl
+```
+
+Output:
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "wsl.exe",
+      "args": ["openground-mcp"]
+    }
+  }
+}
+```
+
+### Virtual Environments
+
+If OpenGround is in a virtual environment:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "/path/to/venv/bin/openground-mcp"
+    }
+  }
+}
+```
+
+### Custom OpenGround Config
+
+Use a non-default OpenGround configuration:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp",
+      "env": {
+        "OPENGROUND_CONFIG": "/custom/path/config.json"
+      }
+    }
+  }
+}
+```
+
+## MCP Tools Available
+
+OpenGround exposes three tools through MCP:
+
+### 1. list_libraries_tool
+
+List available documentation libraries and versions.
+
+**Input:** None
+
+**Output:**
+```json
+{
+  "react": ["latest"],
+  "fastapi": ["latest", "v0.109.0"],
+  "django": ["latest", "v5.0"]
+}
+```
+
+### 2. search_documents_tool
+
+Search documentation using hybrid semantic + BM25 retrieval.
+
+**Input:**
+- `query` (string): Search query
+- `library_name` (string): Library to search
+- `version` (string): Library version
+
+**Output:** Markdown with search results, including:
+- Relevant text chunks
+- Relevance scores
+- Source URLs
+- Hints for fetching full content
+
+### 3. get_full_content_tool
+
+Retrieve complete page content.
+
+**Input:**
+- `url` (string): Page URL from search results
+- `version` (string): Library version
+
+**Output:** Full page content in markdown
+
+## Client-Specific Configurations
+
+### Generic MCP Client
+
+For standard MCP clients:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp",
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+### Zed Editor
+
+Configuration for Zed's MCP support:
+
+```json
+{
+  "language_servers": {
+    "openground": {
+      "command": "openground-mcp",
+      "transport": "stdio"
+    }
+  }
+}
+```
+
+### VS Code (with MCP Extension)
+
+If using an MCP extension for VS Code:
+
+```json
+{
+  "mcp.servers": {
+    "openground": {
+      "command": "openground-mcp"
+    }
+  }
+}
+```
+
+### Continue.dev
+
+Configuration for Continue extension:
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "openground",
+      "command": "openground-mcp"
+    }
+  ]
+}
+```
+
+### JetBrains IDEs (with MCP Plugin)
+
+<Note>
+MCP support in JetBrains IDEs depends on third-party plugins. Configuration may vary.
+</Note>
+
+Typical configuration:
+
+```xml
+<mcp-servers>
+  <server name="openground" command="openground-mcp" />
+</mcp-servers>
+```
+
+## Advanced Configuration
+
+### Multiple Databases
+
+Run separate OpenGround instances with different databases:
+
+```json
+{
+  "mcpServers": {
+    "openground-work": {
+      "command": "/work/venv/bin/openground-mcp",
+      "env": {
+        "OPENGROUND_CONFIG": "~/.openground-work/config.json"
+      }
+    },
+    "openground-oss": {
+      "command": "/oss/venv/bin/openground-mcp",
+      "env": {
+        "OPENGROUND_CONFIG": "~/.openground-oss/config.json"
+      }
+    }
+  }
+}
+```
+
+### Read-Only Mode
+
+OpenGround MCP server is read-only by design. It only exposes search tools, not modification tools.
+
+### Performance Tuning
+
+Tune search performance via OpenGround config:
+
+```bash
+# Increase results
+openground config set query.top_k 15
+
+# Use faster embedding model
+openground config set embeddings.model_name "sentence-transformers/all-MiniLM-L6-v2"
+
+# Use fastembed backend for speed
+openground config set embeddings.embedding_backend "fastembed"
+```
+
+## Debugging
+
+### Test Server Manually
+
+Run the server directly:
+
+```bash
+openground-mcp
+```
+
+The server listens on stdin/stdout. You should see no output (it's waiting for JSON-RPC messages).
+
+Press `Ctrl+C` to exit.
+
+### Check PATH
+
+Verify `openground-mcp` is in PATH:
+
+<Tabs>
+  <Tab title="macOS/Linux">
+    ```bash
+    which openground-mcp
+    echo $PATH
+    ```
+  </Tab>
+  <Tab title="Windows">
+    ```powershell
+    where openground-mcp
+    echo $env:PATH
+    ```
+  </Tab>
+</Tabs>
+
+### Enable Logging
+
+OpenGround MCP server logs to stderr:
+
+```bash
+# Redirect stderr to a log file for debugging
+openground-mcp 2> /tmp/openground-mcp.log
+```
+
+In your client's config:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "sh",
+      "args": ["-c", "openground-mcp 2>> /tmp/openground-mcp.log"]
+    }
+  }
+}
+```
+
+### Test with MCP Inspector
+
+Use the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) to test:
+
+```bash
+# Install MCP Inspector
+npm install -g @modelcontextprotocol/inspector
+
+# Test OpenGround
+mcp-inspector openground-mcp
+```
+
+## Troubleshooting
+
+### Server Not Starting
+
+<Steps>
+  <Step title="Verify Installation">
+    ```bash
+    pip show openground
+    which openground-mcp
+    ```
+  </Step>
+  <Step title="Test Server">
+    ```bash
+    openground-mcp
+    # Should start without errors
+    ```
+  </Step>
+  <Step title="Check Python Environment">
+    Ensure your client can access the same Python environment:
+    ```bash
+    which python
+    python -c "import openground; print(openground.__file__)"
+    ```
+  </Step>
+</Steps>
+
+### No Tools Available
+
+If the client doesn't see OpenGround tools:
+
+1. Verify server is configured correctly
+2. Restart the client completely
+3. Check client logs for connection errors
+4. Test with MCP Inspector
+
+### Search Returns No Results
+
+Verify documentation is indexed:
+
+```bash
+# List libraries
+openground list-libraries
+
+# Check raw data
+openground list-raw-libraries
+
+# Add documentation if needed
+openground add react --source https://github.com/facebook/react.git --docs-path docs -y
+```
+
+### Permission Errors
+
+Ensure execute permissions:
+
+```bash
+# macOS/Linux
+chmod +x $(which openground-mcp)
+
+# Windows: Usually not needed
+```
+
+## Example: Writing a Custom Client
+
+If you're building a custom MCP client:
+
+```python
+import subprocess
+import json
+
+# Start the server
+process = subprocess.Popen(
+    ["openground-mcp"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True
+)
+
+# Send JSON-RPC request
+request = {
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+        "name": "list_libraries_tool",
+        "arguments": {}
+    },
+    "id": 1
+}
+
+process.stdin.write(json.dumps(request) + "\n")
+process.stdin.flush()
+
+# Read response
+response = process.stdout.readline()
+print(json.loads(response))
+```
+
+See the [MCP specification](https://spec.modelcontextprotocol.io) for complete protocol details.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MCP Overview" icon="book" href="/integration/mcp-overview">
+    Learn more about MCP architecture
+  </Card>
+  <Card title="Add Libraries" icon="plus" href="/essentials/adding-libraries">
+    Index more documentation
+  </Card>
+  <Card title="Configure Search" icon="sliders" href="/advanced/configuration">
+    Customize embedding models and retrieval
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/mcp-tools">
+    Detailed tool specifications
+  </Card>
+</CardGroup>

@@ -1,0 +1,570 @@
+---
+title: "Managing sources.json Files"
+description: "Understanding OpenGround's source configuration system and priority order"
+---
+
+## Overview
+
+OpenGround uses `sources.json` files to store library source configurations. This allows you to add documentation by name alone, without repeatedly specifying URLs and options.
+
+## How Sources Files Work
+
+When you add documentation with the `--source` flag, OpenGround automatically saves the configuration so you can reference it by name later.
+
+<Steps>
+  <Step title="First time: Add with full configuration">
+    ```bash
+    openground add fastapi \
+      --source https://github.com/tiangolo/fastapi.git \
+      --docs-path docs/ \
+      -y
+    ```
+  </Step>
+
+  <Step title="Configuration is saved automatically">
+    OpenGround saves to `~/.openground/sources.json`:
+
+    ```json
+    {
+      "fastapi": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/tiangolo/fastapi.git",
+        "docs_paths": ["docs/"]
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Later: Use name only">
+    ```bash
+    # Uses saved configuration
+    openground add fastapi --version v0.110.0 -y
+    ```
+  </Step>
+</Steps>
+
+## Types of Sources Files
+
+OpenGround supports multiple sources files with a priority system:
+
+### 1. User Sources File
+
+**Location:** `~/.openground/sources.json`
+
+- Shared across all your projects
+- Created automatically when you first use `--source`
+- Default location for auto-saved sources
+
+### 2. Project Sources File
+
+**Location:** `.openground/sources.json` (in project directory)
+
+- Project-specific overrides
+- Takes priority over user sources
+- Useful for project-specific documentation versions
+
+### 3. Custom Sources File
+
+**Location:** Anywhere you specify
+
+- Specified via `--sources-file` flag
+- Takes highest priority
+- Useful for team-shared configurations
+
+### 4. Package-Level Sources
+
+**Location:** Inside OpenGround package
+
+- Bundled default sources
+- Lowest priority (fallback)
+
+## Priority Order
+
+When looking up a library by name, OpenGround checks in this order:
+
+<Steps>
+  <Step title="1. Custom path via --sources-file">
+    ```bash
+    openground add mylib --sources-file /team/shared/sources.json -y
+    ```
+    Highest priority - explicitly specified.
+  </Step>
+
+  <Step title="2. Project-local .openground/sources.json">
+    Located in current directory's `.openground/` folder.
+    
+    Allows project-specific overrides.
+  </Step>
+
+  <Step title="3. User ~/.openground/sources.json">
+    Your personal sources file.
+    
+    Shared across all projects.
+  </Step>
+
+  <Step title="4. Package-level bundled sources">
+    Default sources included with OpenGround.
+    
+    Lowest priority (fallback only).
+  </Step>
+</Steps>
+
+## Sources File Structure
+
+The `sources.json` file maps library names to their configurations:
+
+<CodeGroup>
+```json Git Repository
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi.git",
+    "docs_paths": ["docs/"]
+  },
+  "pytorch": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/pytorch/pytorch.git",
+    "docs_paths": ["docs/", "tutorials/"]
+  }
+}
+```
+
+```json Sitemap
+{
+  "numpy": {
+    "type": "sitemap",
+    "sitemap_url": "https://numpy.org/doc/sitemap.xml",
+    "filter_keywords": ["docs/"]
+  },
+  "mintlify": {
+    "type": "sitemap",
+    "sitemap_url": "https://mintlify.com/sitemap.xml",
+    "filter_keywords": ["/docs", "/api-reference"]
+  }
+}
+```
+
+```json Local Path
+{
+  "internal-api": {
+    "type": "local_path",
+    "local_path": "~/work/internal-api-docs"
+  },
+  "my-project": {
+    "type": "local_path",
+    "local_path": "/home/user/projects/my-project/docs"
+  }
+}
+```
+
+```json Mixed Sources
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi.git",
+    "docs_paths": ["docs/"]
+  },
+  "numpy": {
+    "type": "sitemap",
+    "sitemap_url": "https://numpy.org/doc/sitemap.xml",
+    "filter_keywords": ["docs/"]
+  },
+  "internal": {
+    "type": "local_path",
+    "local_path": "~/work/docs"
+  }
+}
+```
+</CodeGroup>
+
+## Source Type Fields
+
+### Git Repository (`"type": "git_repo"`)
+
+```json
+{
+  "library-name": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/user/repo.git",
+    "docs_paths": ["docs/", "wiki/"]  // Optional
+  }
+}
+```
+
+**Fields:**
+- `type` - Must be `"git_repo"`
+- `repo_url` - Git repository URL (required)
+- `docs_paths` - Array of paths within repo (optional, defaults to entire repo)
+- `languages` - Array of programming languages (optional, metadata only)
+
+### Sitemap (`"type": "sitemap"`)
+
+```json
+{
+  "library-name": {
+    "type": "sitemap",
+    "sitemap_url": "https://docs.example.com/sitemap.xml",
+    "filter_keywords": ["docs", "api"]  // Optional
+  }
+}
+```
+
+**Fields:**
+- `type` - Must be `"sitemap"`
+- `sitemap_url` - URL to XML sitemap (required)
+- `filter_keywords` - Array of URL filters (optional)
+- `languages` - Array of programming languages (optional, metadata only)
+
+### Local Path (`"type": "local_path"`)
+
+```json
+{
+  "library-name": {
+    "type": "local_path",
+    "local_path": "~/projects/library/docs"
+  }
+}
+```
+
+**Fields:**
+- `type` - Must be `"local_path"`
+- `local_path` - Path to local directory (required)
+- `languages` - Array of programming languages (optional, metadata only)
+
+## Auto-Save Behavior
+
+By default, OpenGround automatically saves sources to `~/.openground/sources.json` when you use `--source`:
+
+```bash
+# This automatically saves the configuration
+openground add fastapi \
+  --source https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  -y
+
+# Success message confirms:
+# "Added source for 'fastapi' to ~/.openground/sources.json"
+```
+
+### Disable Auto-Save
+
+To disable automatic source saving:
+
+```bash
+openground config set sources.auto_add_local false
+```
+
+Now sources will only be saved if you manually edit the file.
+
+### Re-enable Auto-Save
+
+```bash
+openground config set sources.auto_add_local true
+```
+
+## Project-Specific Overrides
+
+Use project-local sources files to override user sources for specific projects:
+
+<Steps>
+  <Step title="Create project sources directory">
+    ```bash
+    mkdir -p .openground
+    ```
+  </Step>
+
+  <Step title="Create project sources.json">
+    ```bash
+    cat > .openground/sources.json << 'EOF'
+    {
+      "fastapi": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/tiangolo/fastapi.git",
+        "docs_paths": ["docs/", "tutorial/"]
+      }
+    }
+    EOF
+    ```
+  </Step>
+
+  <Step title="Use in project">
+    ```bash
+    # In this project, uses project-specific config
+    openground add fastapi -y
+    
+    # Outside this project, uses ~/.openground/sources.json
+    ```
+  </Step>
+</Steps>
+
+## Custom Sources File
+
+Share a sources file across a team:
+
+```bash
+# Create team sources file
+cat > /team/shared/sources.json << 'EOF'
+{
+  "internal-api": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/company/internal-api.git",
+    "docs_paths": ["docs/"]
+  },
+  "design-system": {
+    "type": "sitemap",
+    "sitemap_url": "https://design.company.com/sitemap.xml"
+  }
+}
+EOF
+
+# Use custom sources file
+openground add internal-api --sources-file /team/shared/sources.json -y
+```
+
+### Set Default Custom Sources
+
+Configure OpenGround to always use a custom sources file:
+
+```bash
+# Set in config
+openground config set sources.file_path /team/shared/sources.json
+
+# Now this uses the custom file by default
+openground add internal-api -y
+
+# View current setting
+openground config get sources.file_path
+```
+
+## Viewing Sources Files
+
+### View User Sources
+
+```bash
+cat ~/.openground/sources.json
+```
+
+### View Project Sources
+
+```bash
+cat .openground/sources.json
+```
+
+### View Which File Is Used
+
+When you run `add` with an existing source, OpenGround shows which file it's using:
+
+```bash
+openground add fastapi -y
+
+# Output includes:
+# "Using sources file: /home/user/.openground/sources.json"
+```
+
+## Editing Sources Files
+
+### Manual Editing
+
+You can directly edit the JSON file:
+
+```bash
+# Edit user sources
+vim ~/.openground/sources.json
+
+# Edit project sources
+vim .openground/sources.json
+```
+
+### Adding a New Source Manually
+
+```json
+{
+  "existing-lib": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/example/existing.git"
+  },
+  // Add new entry:
+  "new-lib": {
+    "type": "sitemap",
+    "sitemap_url": "https://newlib.dev/sitemap.xml",
+    "filter_keywords": ["docs"]
+  }
+}
+```
+
+### Modifying Existing Source
+
+```json
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi.git",
+    // Add or modify docs_paths:
+    "docs_paths": ["docs/", "tutorial/", "advanced/"]
+  }
+}
+```
+
+## Examples
+
+### Team Workflow
+
+```bash
+# Team lead creates shared sources
+cat > /team/sources.json << 'EOF'
+{
+  "company-api": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/company/api.git",
+    "docs_paths": ["docs/"]
+  },
+  "design-system": {
+    "type": "local_path",
+    "local_path": "/shared/design-docs"
+  }
+}
+EOF
+
+# Team members configure their OpenGround
+openground config set sources.file_path /team/sources.json
+
+# Everyone can now use:
+openground add company-api -y
+openground add design-system -y
+```
+
+### Multi-Project Developer
+
+```bash
+# Global sources for common libraries
+cat > ~/.openground/sources.json << 'EOF'
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi.git",
+    "docs_paths": ["docs/"]
+  }
+}
+EOF
+
+# Project A: Override with older version config
+cd ~/projects/project-a
+mkdir -p .openground
+cat > .openground/sources.json << 'EOF'
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi.git",
+    "docs_paths": ["docs_src/"]
+  }
+}
+EOF
+
+# In project-a: Uses project-specific config
+openground add fastapi --version v0.95.0 -y
+
+# In project-b: Uses global config
+cd ~/projects/project-b
+openground add fastapi --version v0.110.0 -y
+```
+
+### Personal + Team Sources
+
+```bash
+# Personal sources for public libraries
+cat > ~/.openground/sources.json << 'EOF'
+{
+  "numpy": {
+    "type": "sitemap",
+    "sitemap_url": "https://numpy.org/doc/sitemap.xml",
+    "filter_keywords": ["docs/"]
+  }
+}
+EOF
+
+# Use team sources for company libraries
+openground add internal-api \
+  --sources-file /team/sources.json \
+  -y
+
+# Use personal sources for public libraries
+openground add numpy -y
+```
+
+## Troubleshooting
+
+### Library Not Found
+
+If OpenGround can't find a library:
+
+```bash
+# Check which file is being used
+ls -la ~/.openground/sources.json
+ls -la .openground/sources.json
+
+# View contents
+cat ~/.openground/sources.json | jq
+
+# Verify library name matches exactly (case-sensitive)
+```
+
+### Wrong Source Being Used
+
+Check the priority order:
+
+```bash
+# Project sources override user sources
+cat .openground/sources.json
+
+# Remove project override if needed
+rm .openground/sources.json
+```
+
+### Invalid JSON
+
+If you get JSON parse errors:
+
+```bash
+# Validate JSON
+jq . ~/.openground/sources.json
+
+# Common issues:
+# - Missing comma between entries
+# - Trailing comma on last entry
+# - Unquoted keys
+# - Single quotes instead of double quotes
+```
+
+### Auto-Save Not Working
+
+Check if auto-save is enabled:
+
+```bash
+# Check setting
+openground config get sources.auto_add_local
+
+# Should output: true
+# If false, enable it:
+openground config set sources.auto_add_local true
+```
+
+## Best Practices
+
+1. **Use user sources for personal libraries** - Keep frequently used libraries in `~/.openground/sources.json`
+
+2. **Use project sources for project-specific versions** - Override in `.openground/sources.json` when needed
+
+3. **Share team sources via config** - Point `sources.file_path` to a shared location
+
+4. **Keep sources.json in version control** - Commit `.openground/sources.json` to share with team
+
+5. **Document custom sources** - Add comments in README about custom sources setup
+
+```bash
+# Example: Add to project README.md
+echo '## Documentation Setup' >> README.md
+echo 'To use this project with OpenGround:' >> README.md  
+echo '```bash' >> README.md
+echo 'openground add myproject -y' >> README.md
+echo '```' >> README.md
+```

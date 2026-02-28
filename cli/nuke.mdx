@@ -1,0 +1,259 @@
+---
+title: openground nuke
+description: Delete data from OpenGround
+---
+
+Delete data from raw_data and/or the LanceDB vector database. Use with caution.
+
+<Warning>
+  These commands permanently delete data and cannot be undone. Make sure you have backups or can re-extract the documentation.
+</Warning>
+
+## Commands
+
+### all
+
+Delete all files in both raw_data and LanceDB directories.
+
+```bash
+openground nuke all [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+#### Example
+
+```bash
+openground nuke all
+```
+
+**Output:**
+```
+⚠ This will permanently delete ALL data:
+  • Raw data: 5 libraries in /home/user/.openground/raw_data
+  • Embeddings: 5 libraries in /home/user/.openground/lancedb
+
+ℹ Tip: Run 'openground list-raw-libraries' and 'openground list-libraries' 
+  to see what will be deleted.
+
+Are you sure you want to delete ALL data? This cannot be undone! [y/N]: y
+
+✓ Deleted raw data directory: /home/user/.openground/raw_data
+✓ Deleted LanceDB directory: /home/user/.openground/lancedb
+
+✓ Deleted all data (5 raw libraries, 5 embedded libraries).
+```
+
+### raw_data
+
+Delete all files in the raw_data directory.
+
+```bash
+openground nuke raw_data [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+#### Example
+
+```bash
+openground nuke raw_data
+```
+
+**Output:**
+```
+⚠ This will permanently delete ALL raw data:
+  • 5 libraries in /home/user/.openground/raw_data
+
+ℹ Tip: Run 'openground list-raw-libraries' to see what will be deleted.
+
+Are you sure you want to delete ALL raw data? This cannot be undone! [y/N]: y
+
+✓ Deleted raw data directory: /home/user/.openground/raw_data
+
+✓ Deleted 5 raw libraries.
+```
+
+### embeddings
+
+Delete all files in the LanceDB directory.
+
+```bash
+openground nuke embeddings [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+#### Example
+
+```bash
+openground nuke embeddings
+```
+
+**Output:**
+```
+⚠ This will permanently delete ALL embeddings:
+  • 5 libraries in /home/user/.openground/lancedb
+
+ℹ Tip: Run 'openground list-libraries' to see what will be deleted.
+
+Are you sure you want to delete ALL embeddings? This cannot be undone! [y/N]: y
+
+✓ Deleted LanceDB directory: /home/user/.openground/lancedb
+
+✓ Deleted 5 embedded libraries.
+```
+
+## Use Cases
+
+### Complete Reset
+
+Delete everything and start fresh:
+
+```bash
+openground nuke all -y
+```
+
+### Free Disk Space (Keep Embeddings)
+
+Delete raw data but keep embeddings:
+
+```bash
+openground nuke raw_data -y
+```
+
+Raw data is only needed for re-embedding. Once embedded, you can safely delete it.
+
+### Re-embed Everything
+
+Delete embeddings but keep raw data:
+
+```bash
+openground nuke embeddings -y
+openground embed mylib  # Re-embed from raw data
+```
+
+### Before Changing Embedding Model
+
+When switching embedding models, you must re-embed:
+
+```bash
+# Change model
+openground config set embeddings.embedding_backend fastembed
+openground config set embeddings.model_name BAAI/bge-small-en-v1.5
+
+# Delete old embeddings
+openground nuke embeddings -y
+
+# Re-embed from raw data
+openground embed mylib
+```
+
+## Safety Features
+
+### Confirmation Prompts
+
+All commands show:
+- Number of libraries to be deleted
+- Directory paths
+- Tips for checking what will be deleted
+
+You must explicitly confirm unless using `--yes`.
+
+### Count Before Delete
+
+Before deleting, verify what exists:
+
+```bash
+# Check raw libraries
+openground list-raw-libraries
+
+# Check embedded libraries
+openground list-libraries
+
+# Then delete
+openground nuke all
+```
+
+### No Data = No Action
+
+If directories are empty, commands report and exit:
+
+```bash
+openground nuke all
+```
+
+**Output:**
+```
+No data found. Nothing to delete.
+```
+
+## What Gets Deleted
+
+### `nuke all`
+
+- **Raw data directory:** `~/.openground/raw_data/`
+- **LanceDB directory:** `~/.openground/lancedb/`
+- **Statistics:** Tool call statistics (reset to zero)
+- **Query caches:** Internal query caches
+
+### `nuke raw_data`
+
+- **Raw data directory:** `~/.openground/raw_data/`
+- All extracted JSON files
+
+### `nuke embeddings`
+
+- **LanceDB directory:** `~/.openground/lancedb/`
+- All vector embeddings
+- **Statistics:** Tool call statistics (reset to zero)
+- **Query caches:** Internal query caches
+
+## What Doesn't Get Deleted
+
+- **Configuration file:** `~/.openground/config.json` (use `openground config reset`)
+- **Sources file:** `~/.openground/sources.json`
+- **MCP configurations:** Agent integration configs
+
+## Recovery
+
+After nuking, you can:
+
+1. **Re-add libraries:**
+   ```bash
+   openground add langchain -s https://python.langchain.com/sitemap.xml
+   ```
+
+2. **Re-embed from raw data (if available):**
+   ```bash
+   openground embed mylib
+   ```
+
+3. **Restore from backup (if created):**
+   ```bash
+   cp -r /backup/.openground ~/
+   ```
+
+## Related Commands
+
+- [openground remove](/cli/remove) - Remove specific libraries
+- [openground list](/cli/list) - View what will be deleted
+- [openground config reset](/cli/config) - Reset configuration

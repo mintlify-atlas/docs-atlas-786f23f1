@@ -1,0 +1,336 @@
+---
+title: Claude Code Integration
+description: Install OpenGround MCP server for Claude Code using the claude CLI
+---
+
+# Claude Code Integration
+
+Install OpenGround's MCP server in Claude Code to enable real-time documentation search during conversations.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Install OpenGround">
+    ```bash
+    pip install openground
+    ```
+  </Step>
+  <Step title="Install Claude Code CLI">
+    Follow the [Claude Code CLI installation guide](https://code.claude.com/docs/en/cli)
+  </Step>
+  <Step title="Add Documentation">
+    Index at least one library:
+    ```bash
+    openground add react --source https://github.com/facebook/react.git --docs-path docs -y
+    ```
+  </Step>
+</Steps>
+
+## Installation
+
+### Automatic Installation (Recommended)
+
+OpenGround provides an automatic installer that uses the `claude` CLI:
+
+```bash
+openground install-mcp --claude-code
+```
+
+This command:
+1. Removes any existing OpenGround MCP configuration
+2. Registers the `openground-mcp` server with Claude Code
+3. Configures stdio transport at user scope
+
+<Check>**Success!** You should see: "Successfully installed openground to Claude Code!"</Check>
+
+### Manual Installation
+
+If the automatic installer fails, you can manually install using the `claude` CLI:
+
+```bash
+claude mcp add --transport stdio --scope user openground -- openground-mcp
+```
+
+## Configuration Details
+
+The automatic installer creates this configuration:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "openground-mcp"
+    }
+  }
+}
+```
+
+### Configuration Location
+
+Claude Code stores MCP configurations at:
+- **macOS**: `~/.claude/mcp.json`
+- **Linux**: `~/.config/claude/mcp.json`
+- **Windows**: `%APPDATA%\Claude\mcp.json`
+
+### Transport Protocol
+
+OpenGround uses **stdio** (standard input/output) transport:
+- Claude Code spawns `openground-mcp` as a subprocess
+- Communication happens over stdin/stdout
+- No network configuration required
+
+## Verification
+
+<Steps>
+  <Step title="Restart Claude Code">
+    Quit and restart Claude Code completely
+  </Step>
+  <Step title="Check MCP Status">
+    ```bash
+    claude mcp list
+    ```
+    You should see `openground` in the list
+  </Step>
+  <Step title="Test in Conversation">
+    Ask Claude: "What libraries are available in openground?"
+    
+    Claude should call the `list_libraries_tool` and show your indexed documentation
+  </Step>
+</Steps>
+
+## Using OpenGround with Claude Code
+
+### Basic Usage
+
+Once installed, Claude Code will automatically use OpenGround when appropriate:
+
+```
+You: How do I use React hooks?
+
+Claude: Let me search the official React documentation...
+[Calls search_documents_tool]
+
+Here's what I found in the React documentation:
+...
+```
+
+### Explicit Tool Usage
+
+You can explicitly request documentation searches:
+
+```
+You: Search openground for FastAPI dependency injection
+
+Claude: [Calls list_libraries_tool, then search_documents_tool]
+```
+
+## Claude Code Agent (Advanced)
+
+For isolated documentation searches, you can create a dedicated OpenGround agent.
+
+### What is a Claude Code Agent?
+
+Agents in Claude Code are subagents that:
+- Run in isolated contexts
+- Have access to specific tools
+- Can be invoked automatically or manually
+- Keep your main conversation focused
+
+### Installing the Agent
+
+<Steps>
+  <Step title="Create Agent Directory">
+    ```bash
+    mkdir -p ~/.claude/agents
+    ```
+  </Step>
+  <Step title="Create Agent Definition">
+    Create `~/.claude/agents/openground-docs-search.md`:
+    
+    ```markdown
+    ---
+    name: openground-docs-search
+    description: Search official framework and library documentation from openground's local vector database.
+    tools: mcp__openground__list_libraries_tool, mcp__openground__search_documents_tool, mcp__openground__get_full_content_tool
+    model: sonnet
+    ---
+    
+    You are a documentation search specialist. Your job is to:
+    
+    1. First, call list_libraries_tool to see what documentation is available
+    2. Search the documentation using search_documents_tool
+    3. Present focused results with source URLs
+    4. Use get_full_content_tool if more context is needed
+    
+    Always confirm the library and version exist before searching.
+    Present results clearly with proper markdown formatting.
+    ```
+  </Step>
+  <Step title="Restart Claude Code">
+    Quit and restart for the agent to be recognized
+  </Step>
+</Steps>
+
+### Using the Agent
+
+The agent runs in an isolated context to avoid cluttering your main conversation:
+
+**Automatic invocation:**
+```
+You: How do I use React useEffect?
+
+Claude: [Automatically invokes openground-docs-search agent]
+```
+
+**Manual invocation:**
+```
+You: Use the openground-docs-search agent to find Django model examples
+
+Claude: [Invokes agent explicitly]
+```
+
+### Agent Workflow
+
+<Steps>
+  <Step title="List Available Libraries">
+    Agent checks what documentation is in your database
+  </Step>
+  <Step title="Search Documentation">
+    Performs semantic search for your query
+  </Step>
+  <Step title="Present Results">
+    Shows relevant snippets with source URLs
+  </Step>
+  <Step title="Fetch Full Content">
+    Gets complete pages when needed
+  </Step>
+</Steps>
+
+## Platform-Specific Notes
+
+### macOS
+
+No special configuration needed. The `openground-mcp` command should be in your PATH after pip installation.
+
+### Linux
+
+Ensure pip's bin directory is in your PATH:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Windows
+
+Ensure Python Scripts directory is in your PATH:
+
+```powershell
+# Check if openground-mcp is available
+where openground-mcp
+```
+
+If not found, add Python Scripts to PATH:
+```
+C:\Users\YourUsername\AppData\Local\Programs\Python\Python311\Scripts
+```
+
+### WSL (Windows Subsystem for Linux)
+
+If running Claude Code on Windows but OpenGround in WSL, use the WSL configuration:
+
+```bash
+openground install-mcp --wsl
+```
+
+This generates a configuration using `wsl.exe` wrapper:
+
+```json
+{
+  "mcpServers": {
+    "openground": {
+      "command": "wsl.exe",
+      "args": ["openground-mcp"]
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Error: 'claude' CLI not found
+
+The `claude` CLI is not installed. Install it from:
+https://code.claude.com/docs/en/cli
+
+Alternatively, use manual configuration:
+```bash
+openground install-mcp
+# Copy the generated JSON to your Claude Code config
+```
+
+### MCP Server Not Starting
+
+<Steps>
+  <Step title="Verify Installation">
+    ```bash
+    which openground-mcp
+    ```
+    Should return the path to the executable
+  </Step>
+  <Step title="Test Server Manually">
+    ```bash
+    openground-mcp
+    ```
+    Should start without errors (use Ctrl+C to exit)
+  </Step>
+  <Step title="Check Claude Code Logs">
+    Look for error messages in Claude Code's console or logs
+  </Step>
+</Steps>
+
+### No Search Results
+
+Verify documentation is indexed:
+
+```bash
+# List available libraries
+openground list-libraries
+
+# Add documentation if needed
+openground add react --source https://github.com/facebook/react.git --docs-path docs -y
+```
+
+### Agent Not Found
+
+Make sure the agent file is in the correct location:
+- Global: `~/.claude/agents/openground-docs-search.md`
+- Project: `.claude/agents/openground-docs-search.md`
+
+## Updating Configuration
+
+To update your OpenGround MCP configuration:
+
+```bash
+# Re-run the installer
+openground install-mcp --claude-code
+```
+
+The installer automatically removes old configurations before installing.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Libraries" icon="plus" href="/essentials/adding-libraries">
+    Index more documentation sources
+  </Card>
+  <Card title="Configure Search" icon="sliders" href="/advanced/configuration">
+    Customize search behavior
+  </Card>
+  <Card title="MCP Overview" icon="book" href="/integration/mcp-overview">
+    Learn more about MCP architecture
+  </Card>
+  <Card title="Custom Agents" icon="robot" href="/integration/custom-agents">
+    Use with other MCP clients
+  </Card>
+</CardGroup>

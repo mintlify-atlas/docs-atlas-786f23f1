@@ -1,0 +1,156 @@
+---
+title: Introduction
+description: On-device RAG system for AI-powered documentation search
+---
+
+# Welcome to OpenGround
+
+OpenGround lets you give controlled access to documentation to AI agents. Everything happens on-device.
+
+<Info>
+OpenGround is an on-device RAG system that extracts documentation from git repos and sitemaps, embeds it for semantic search, and exposes it to AI agents via MCP.
+</Info>
+
+## What is OpenGround?
+
+OpenGround bridges the gap between your AI coding assistant and official documentation. Instead of relying on potentially outdated training data, your AI agents can search accurate, up-to-date documentation stored locally on your machine.
+
+<CardGroup cols={2}>
+  <Card title="On-Device Processing" icon="laptop" iconType="duotone">
+    All data stays on your machine. No cloud services, no API keys, complete privacy.
+  </Card>
+  <Card title="Hybrid Search" icon="magnifying-glass" iconType="duotone">
+    Combines semantic vector search with BM25 full-text search for accurate results.
+  </Card>
+  <Card title="MCP Integration" icon="plug" iconType="duotone">
+    Seamlessly integrates with Claude Code, Cursor, OpenCode, and other MCP-compatible agents.
+  </Card>
+  <Card title="Multi-Version Support" icon="code-branch" iconType="duotone">
+    Store and query multiple versions of the same library simultaneously.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+```
+      ┌─────────────────────────────────────────────────────────────────────┐
+      │                           OPENGROUND                                │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                                                                     │
+      │       SOURCE                  PROCESS              STORAGE/CLIENT   │
+      │                                                                     │
+      │    ┌──────────┐      ┌───────────┐   ┌──────────┐   ┌──────────┐    │
+      │    │ git repo ├─────>│  Extract  ├──>│  Chunk   ├──>│ LanceDB  │    │
+      │    |   -or-   |      │ (raw_data)│   │   Text   │   │ (vector  │    │
+      │    │ sitemap  │      └───────────┘   └──────────┘   │  +BM25)  │    │
+      │    │   -or-   │                           │         └────┬─────┘    │
+      │    │ local dir│                           │              │          │
+      │    └──────────┘                           │              │          │
+      │                                           ▼              │          │
+      │                                    ┌───────────┐         │          │
+      │                                    │   Local   |<────────┘          │
+      │                                    │ Embedding │         │          │
+      │                                    │   Model   │         ▼          │
+      │                                    └───────────┘  ┌─────────────┐   │
+      │                                                   │ CLI / MCP   │   │
+      │                                                   │  (hybrid    │   │
+      |                                                   |   search)   |   |
+      │                                                   └─────────────┘   │
+      │                                                                     │
+      └─────────────────────────────────────────────────────────────────────┘
+```
+
+OpenGround follows a simple pipeline:
+
+1. **Source** - Extract docs from git repos, sitemaps, or local directories
+2. **Process** - Chunk text and generate embeddings using local models
+3. **Storage** - Store in LanceDB with vector + BM25 indices
+4. **Query** - Search via CLI or expose to AI agents through MCP
+
+## Key Features
+
+### Privacy First
+All processing happens on your machine. No data leaves your device. No cloud dependencies.
+
+### Flexible Sources
+Extract documentation from:
+- **Git repositories** - Clone specific versions, sparse checkout for docs folders
+- **Sitemaps** - Crawl documentation sites automatically
+- **Local directories** - Index your own documentation or notes
+
+### Powerful Search
+Hybrid search combines:
+- **Semantic search** - Understands meaning and context
+- **BM25** - Traditional keyword matching for precise queries
+
+### AI Agent Integration
+Seamless integration with:
+- Claude Code
+- Cursor
+- OpenCode
+- Any MCP-compatible agent
+
+### Version Management
+- Store multiple versions of the same library
+- Query specific versions
+- Incremental updates with content hash detection
+
+### Multiple Embedding Backends
+- **Sentence-Transformers** - Full GPU/MPS/CPU support, larger package
+- **FastEmbed** - Lightweight, CPU-optimized
+- **FastEmbed-GPU** - Experimental CUDA support
+
+## Use Cases
+
+<Accordion title="AI Coding Assistants">
+Give your AI assistant access to official documentation without polluting your conversation context. Ask questions like "How do I use React's useEffect hook?" and get answers directly from the React documentation.
+</Accordion>
+
+<Accordion title="Multi-Project Development">
+Work with multiple versions of the same framework? Store React 17 and React 18 docs side-by-side, query the version you're currently using.
+</Accordion>
+
+<Accordion title="Offline Development">
+Download documentation once, use it forever offline. Perfect for planes, remote locations, or when you want to avoid distractions.
+</Accordion>
+
+<Accordion title="Private Documentation">
+Index your company's internal documentation and make it searchable for AI agents, without sending it to the cloud.
+</Accordion>
+
+## Supported File Formats
+
+When extracting from git repos or local directories, OpenGround supports:
+- Markdown (`.md`, `.mdx`)
+- reStructuredText (`.rst`)
+- Plain text (`.txt`)
+- Jupyter Notebooks (`.ipynb`)
+- HTML (`.html`, `.htm`)
+
+## How It Works
+
+OpenGround uses a **Retrieval-Augmented Generation (RAG)** approach:
+
+1. **Extract** - Download documentation from various sources
+2. **Chunk** - Split documents into manageable pieces (800 chars with 200 char overlap)
+3. **Embed** - Generate vector embeddings using BGE-small-en-v1.5 model
+4. **Index** - Store in LanceDB with both vector and BM25 full-text indices
+5. **Query** - Search using hybrid approach that combines semantic and keyword matching
+6. **Serve** - Expose results via CLI or MCP server for AI agents
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running in 5 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed installation instructions
+  </Card>
+  <Card title="Add Documentation" icon="book" href="/guides/add-from-git">
+    Learn how to add your first library
+  </Card>
+  <Card title="MCP Integration" icon="plug" href="/integration/mcp-overview">
+    Connect to your AI coding assistant
+  </Card>
+</CardGroup>

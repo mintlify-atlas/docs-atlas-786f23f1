@@ -1,0 +1,225 @@
+---
+title: openground config
+description: Manage OpenGround configuration
+---
+
+Manage OpenGround configuration settings. All configuration is stored in `~/.openground/config.json`.
+
+## Commands
+
+### show
+
+Display current configuration.
+
+```bash
+openground config show [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--defaults" type="boolean" default="false">
+  Show only hardcoded defaults (ignore user config)
+</ParamField>
+
+#### Example
+
+```bash
+openground config show
+```
+
+**Output:**
+```
+Path to config file: /home/user/.openground/config.json
+
+{
+  "db_path": "/home/user/.openground/lancedb",
+  "table_name": "documents",
+  "raw_data_dir": "/home/user/.openground/raw_data",
+  "embeddings": {
+    "embedding_backend": "sentence-transformers",
+    "model_name": "all-MiniLM-L6-v2",
+    "chunk_size": 512,
+    "chunk_overlap": 128
+  },
+  "query": {
+    "top_k": 5
+  },
+  "extraction": {
+    "concurrency_limit": 10
+  },
+  "sources": {
+    "auto_add_local": true,
+    "file_path": "/home/user/.openground/sources.json"
+  }
+}
+```
+
+### get
+
+Get a specific configuration value.
+
+```bash
+openground config get <key>
+```
+
+#### Arguments
+
+<ParamField path="key" type="string" required>
+  Config key (use dot notation like `embeddings.chunk_size`)
+</ParamField>
+
+#### Example
+
+```bash
+openground config get embeddings.chunk_size
+```
+
+**Output:**
+```
+512
+```
+
+### set
+
+Set a configuration value.
+
+```bash
+openground config set <key> <value>
+```
+
+#### Arguments
+
+<ParamField path="key" type="string" required>
+  Config key (use dot notation like `embeddings.chunk_size`)
+</ParamField>
+
+<ParamField path="value" type="string" required>
+  Value to set. Supports:
+  - **Plain strings:** `openground config set db_path /custom/path`
+  - **Numbers:** `openground config set query.top_k 10`
+  - **Booleans:** `openground config set sources.auto_add_local false`
+  - **JSON literals:** `openground config set embeddings '{"chunk_size": 1024}'`
+</ParamField>
+
+#### Validation
+
+- `embeddings.embedding_backend` must be either `sentence-transformers` or `fastembed`
+
+#### Examples
+
+```bash
+# Set chunk size
+openground config set embeddings.chunk_size 1024
+
+# Set top_k for queries
+openground config set query.top_k 10
+
+# Change embedding backend
+openground config set embeddings.embedding_backend fastembed
+
+# Disable auto-add to sources.json
+openground config set sources.auto_add_local false
+
+# Set custom database path
+openground config set db_path /custom/path/lancedb
+```
+
+### path
+
+Print the path to the configuration file.
+
+```bash
+openground config path
+```
+
+**Output:**
+```
+/home/user/.openground/config.json
+```
+
+### reset
+
+Reset configuration to defaults (deletes the config file).
+
+```bash
+openground config reset [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+<Warning>
+  This deletes your configuration file. Custom settings will be lost.
+</Warning>
+
+#### Example
+
+```bash
+openground config reset
+```
+
+**Output:**
+```
+Delete config file at /home/user/.openground/config.json? [y/N]: y
+✓ Config file deleted: /home/user/.openground/config.json
+   All settings will use defaults.
+```
+
+## Configuration Keys
+
+See the [Configuration Reference](/cli/config-reference) for a complete list of configuration options.
+
+## Common Use Cases
+
+### Increase Query Results
+
+```bash
+openground config set query.top_k 10
+```
+
+### Use Larger Chunks
+
+```bash
+openground config set embeddings.chunk_size 1024
+openground config set embeddings.chunk_overlap 256
+```
+
+### Change Embedding Backend
+
+```bash
+# Use FastEmbed (faster, smaller models)
+openground config set embeddings.embedding_backend fastembed
+
+# Use sentence-transformers (more models available)
+openground config set embeddings.embedding_backend sentence-transformers
+```
+
+### Disable Auto-Save to sources.json
+
+```bash
+openground config set sources.auto_add_local false
+```
+
+### Use Custom Database Location
+
+```bash
+openground config set db_path /mnt/data/openground/lancedb
+openground config set raw_data_dir /mnt/data/openground/raw_data
+```
+
+### Increase Extraction Concurrency
+
+```bash
+openground config set extraction.concurrency_limit 20
+```
+
+## Related Commands
+
+- [openground config-reference](/cli/config-reference) - Complete configuration reference
+- [openground add](/cli/add) - Add documentation
+- [openground query](/cli/query) - Search documentation

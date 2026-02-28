@@ -1,0 +1,328 @@
+---
+title: "Adding Documentation from Sitemaps"
+description: "Learn how to add and manage documentation from XML sitemaps in OpenGround"
+---
+
+## Overview
+
+OpenGround can crawl and extract documentation from websites using XML sitemaps. This is ideal for documentation hosted on platforms like Mintlify, Docusaurus, or any site that provides a sitemap.
+
+## Basic Usage
+
+<Steps>
+  <Step title="Add documentation with sitemap URL">
+    Use the `add` command with a sitemap URL:
+
+    ```bash
+    openground add library-name \
+      --source https://docs.example.com/sitemap.xml \
+      -y
+    ```
+
+    The `-y` flag skips the confirmation prompt between extract and ingest.
+  </Step>
+
+  <Step title="Verify the library was added">
+    List all libraries in your database:
+
+    ```bash
+    openground list-libraries
+    # or
+    openground ls
+    ```
+  </Step>
+</Steps>
+
+## Filtering URLs
+
+### Using Filter Keywords
+
+Use `--filter-keyword` to only extract URLs containing specific strings:
+
+```bash
+openground add numpy \
+  --source https://numpy.org/doc/sitemap.xml \
+  --filter-keyword docs/ \
+  -y
+```
+
+### Multiple Filter Keywords
+
+Specify multiple keywords by using the flag multiple times. URLs matching **any** keyword will be included:
+
+```bash
+openground add library-name \
+  --source https://docs.example.com/sitemap.xml \
+  --filter-keyword docs \
+  --filter-keyword blog \
+  --filter-keyword tutorials \
+  -y
+```
+
+This will include URLs containing "docs" **OR** "blog" **OR** "tutorials".
+
+### No Filtering
+
+If no filter keywords are provided, all URLs from the sitemap are extracted:
+
+```bash
+# Extracts all URLs from sitemap
+openground add library-name \
+  --source https://docs.example.com/sitemap.xml \
+  -y
+```
+
+## Handling Query Parameters
+
+### Trimming Query Parameters
+
+Some sitemaps include duplicate URLs with different query parameters. Use `--trim-query-params` to avoid duplicates:
+
+```bash
+openground add library-name \
+  --source https://docs.example.com/sitemap.xml \
+  --trim-query-params \
+  -y
+```
+
+This converts:
+- `https://docs.example.com/page?v=1` → `https://docs.example.com/page`
+- `https://docs.example.com/page?v=2` → `https://docs.example.com/page` (deduplicated)
+
+<Warning>
+  Only use `--trim-query-params` if the query parameters don't affect the page content. Some sites use query parameters to render different content.
+</Warning>
+
+## Version Handling
+
+<Warning>
+  Sitemap sources **always use version "latest"**. The `--version` flag is ignored for sitemap sources.
+</Warning>
+
+Sitemap-based documentation is assumed to be the current/latest version. If you need version-specific documentation:
+
+1. Check if the site has version-specific sitemaps:
+   ```bash
+   openground add mylib-v1 --source https://v1.docs.example.com/sitemap.xml -y
+   openground add mylib-v2 --source https://v2.docs.example.com/sitemap.xml -y
+   ```
+
+2. Use git repositories instead (if available) for proper version management.
+
+## Concurrency Control
+
+By default, OpenGround uses the concurrency limit from your config. You can override it:
+
+```bash
+# Set extraction concurrency in config
+openground config set extraction.concurrency_limit 20
+
+# View current setting
+openground config get extraction.concurrency_limit
+```
+
+Higher concurrency = faster extraction, but may overwhelm some servers.
+
+## All Available Flags
+
+```bash
+openground add LIBRARY [OPTIONS]
+```
+
+### Arguments
+
+- `LIBRARY` - Name of the library (required)
+
+### Options
+
+- `--source, -s TEXT` - Root sitemap URL (e.g., `https://docs.example.com/sitemap.xml`)
+- `--filter-keyword, -f TEXT` - Filter for URLs (can be specified multiple times)
+- `--trim-query-params` - Remove query parameters from URLs to avoid duplicates
+- `--yes, -y` - Skip confirmation prompt between extract and ingest
+- `--sources-file TEXT` - Path to a custom sources.json file
+
+<Note>
+  The following flags are for git sources only and are ignored for sitemaps:
+  - `--version, -v` - Sitemaps always use "latest"
+  - `--docs-path, -d` - Not applicable to sitemaps
+</Note>
+
+## Using Sources Files
+
+When you add documentation with `--source`, OpenGround automatically saves the configuration to `~/.openground/sources.json`:
+
+<Steps>
+  <Step title="First time: Add with source">
+    ```bash
+    openground add numpy \
+      --source https://numpy.org/doc/sitemap.xml \
+      --filter-keyword docs/ \
+      -y
+    ```
+
+    This saves the configuration including filter keywords.
+  </Step>
+
+  <Step title="Later: Add by name only">
+    ```bash
+    # Uses saved configuration
+    openground add numpy -y
+    ```
+
+    The source URL and filter keywords are retrieved from sources.json.
+  </Step>
+</Steps>
+
+See [Managing sources.json files](/guides/sources-files) for more details.
+
+## Auto-Detection
+
+OpenGround can auto-detect sitemap sources:
+
+```bash
+# These are automatically detected as sitemaps
+openground add lib1 --source https://docs.example.com/sitemap.xml -y
+openground add lib2 --source https://example.com/docs/sitemap_index.xml -y
+```
+
+Detection rules:
+1. URL ends with `.xml`
+2. URL contains "sitemap" (case-insensitive)
+3. If detection fails, OpenGround defaults to sitemap with a warning
+
+## Updating Documentation
+
+To refresh documentation from a sitemap:
+
+```bash
+openground update library-name -y
+```
+
+This efficiently updates only changed pages by comparing content hashes.
+
+## Advanced: Direct Extract Command
+
+For advanced use cases, you can use the `extract-sitemap` command separately:
+
+```bash
+openground extract-sitemap \
+  --sitemap-url https://docs.example.com/sitemap.xml \
+  --library library-name \
+  --filter-keyword docs \
+  --concurrency-limit 10 \
+  --trim-query-params
+```
+
+Then embed separately:
+
+```bash
+openground embed library-name --version latest
+```
+
+## Examples
+
+<CodeGroup>
+```bash Basic Sitemap
+openground add numpy \
+  --source https://numpy.org/doc/sitemap.xml \
+  --filter-keyword docs/ \
+  -y
+```
+
+```bash Multiple Filters
+openground add framework \
+  --source https://docs.framework.dev/sitemap.xml \
+  --filter-keyword /docs \
+  --filter-keyword /guides \
+  --filter-keyword /api \
+  -y
+```
+
+```bash With Query Param Trimming
+openground add library \
+  --source https://docs.example.com/sitemap.xml \
+  --filter-keyword docs \
+  --trim-query-params \
+  -y
+```
+
+```bash From Sources File
+# After initial add, use name only
+openground add numpy -y
+```
+</CodeGroup>
+
+### Real-World Example: Mintlify Documentation
+
+```bash
+# Add Mintlify's own documentation
+openground add mintlify \
+  --source https://mintlify.com/sitemap.xml \
+  --filter-keyword /docs \
+  -y
+
+# Query it
+openground query "how to add code blocks" --library mintlify
+```
+
+### Docusaurus Site
+
+```bash
+openground add docusaurus \
+  --source https://docusaurus.io/sitemap.xml \
+  --filter-keyword /docs/ \
+  -y
+```
+
+### Entire Site Without Filtering
+
+```bash
+# Useful for small documentation sites
+openground add smalldocs \
+  --source https://smalldocs.example.com/sitemap.xml \
+  -y
+```
+
+## Troubleshooting
+
+### Too Many Pages
+
+If extraction pulls in too many irrelevant pages:
+
+1. Add more specific filter keywords
+2. Use multiple keywords to narrow down
+3. Consider using a git repository source instead if available
+
+```bash
+# Instead of this (too broad)
+openground add lib --source https://example.com/sitemap.xml -y
+
+# Do this (more specific)
+openground add lib \
+  --source https://example.com/sitemap.xml \
+  --filter-keyword /api-reference/ \
+  -y
+```
+
+### Duplicate URLs
+
+If you're seeing duplicate pages with different query parameters:
+
+```bash
+openground add library \
+  --source https://docs.example.com/sitemap.xml \
+  --trim-query-params \
+  -y
+```
+
+### Rate Limiting
+
+If the target server is rate-limiting you:
+
+```bash
+# Reduce concurrency
+openground config set extraction.concurrency_limit 5
+
+# Then try again
+openground add library --source https://docs.example.com/sitemap.xml -y
+```

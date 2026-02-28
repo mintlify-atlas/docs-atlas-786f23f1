@@ -1,0 +1,136 @@
+---
+title: openground stats
+description: View and manage OpenGround usage statistics
+---
+
+View and manage OpenGround usage statistics, including library counts and tool call metrics.
+
+## Commands
+
+### show
+
+Display OpenGround statistics.
+
+```bash
+openground stats show
+```
+
+#### Output Example
+
+```
+Openground Statistics
+==================================================
+Libraries: 5
+Total chunks: 12,847
+
+Tool calls:
+  query: 127
+  add: 8
+  update: 3
+  remove: 2
+  list: 15
+```
+
+#### Metrics
+
+- **Libraries:** Number of distinct libraries in the database
+- **Total chunks:** Total number of embedded chunks across all libraries
+- **Tool calls:** Count of each command execution
+
+### reset
+
+Clear tool call statistics (reset to zero).
+
+```bash
+openground stats reset [OPTIONS]
+```
+
+#### Options
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip confirmation prompt.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+<Warning>
+  This permanently clears all tool call statistics. Library and chunk counts will remain.
+</Warning>
+
+#### Example
+
+```bash
+openground stats reset
+```
+
+**Output:**
+```
+Are you sure you want to clear all tool call statistics? [y/N]: y
+✓ Statistics cleared. Tool call counts reset to zero.
+```
+
+#### With Auto-Confirm
+
+```bash
+openground stats reset -y
+```
+
+## Use Cases
+
+### Monitor Usage
+
+Check how often you're querying documentation:
+
+```bash
+openground stats show
+```
+
+### Track Library Growth
+
+See total chunks as you add more documentation:
+
+```bash
+openground stats show
+# Add a library
+openground add newlib -s https://example.com/docs
+# Check again
+openground stats show
+```
+
+### Reset After Testing
+
+Clear stats after testing or development:
+
+```bash
+openground stats reset -y
+```
+
+## Statistics Storage
+
+Statistics are stored in the LanceDB database and updated automatically:
+- **Location:** Within the configured `db_path`
+- **Updates:** Real-time as commands are executed
+- **Persistence:** Survives application restarts
+
+## What Gets Tracked
+
+Tool calls tracked:
+- `query` - Search queries
+- `add` - Adding/updating libraries
+- `update` - Explicit updates
+- `remove` - Removing libraries
+- `list` - Listing libraries
+- Other commands as executed
+
+## What Doesn't Get Tracked
+
+- **Personal data:** No query content is stored
+- **URLs or sources:** No external URLs tracked
+- **Configuration changes:** Config edits not tracked
+- **Help commands:** `--help` not tracked
+
+## Related Commands
+
+- [openground list](/cli/list) - View libraries (contributes to stats)
+- [openground query](/cli/query) - Search (tracked in stats)
+- [openground nuke](/cli/nuke) - Delete all data (clears stats)

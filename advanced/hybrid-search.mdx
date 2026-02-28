@@ -1,0 +1,406 @@
+---
+title: Hybrid Search
+description: Combining vector search with BM25 for optimal retrieval
+---
+
+OpenGround uses **hybrid search** that combines semantic vector search with traditional keyword-based BM25 ranking. This approach leverages the strengths of both methods for superior retrieval accuracy.
+
+## How Hybrid Search Works
+
+Hybrid search combines two complementary retrieval methods:
+
+1. **Vector Search (Semantic):** Finds documents with similar *meaning* using embeddings
+2. **BM25 (Keyword):** Finds documents with matching *terms* using statistical ranking
+
+The results are merged using a ranking algorithm that balances both signals.
+
+## Implementation
+
+From `query.py:68-105`, the core search implementation:
+
+```python
+def search(
+    query: str,
+    version: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+    library_name: Optional[str] = None,
+    top_k: int = 10,
+    show_progress: bool = True,
+) -> str:
+    """Run a hybrid search (semantic + BM25) against the LanceDB table."""
+    
+    table = _get_table(db_path, table_name)
+    if table is None:
+        return "Found 0 matches."
+    
+    # Generate query embedding for vector search
+    query_vec = generate_embeddings([query], show_progress=show_progress)[0]
+    
+    # Create hybrid search combining vector + text
+    search_builder = table.search(query_type="hybrid").text(query).vector(query_vec)
+    
+    # Apply filters
+    safe_version = _escape_sql_string(version)
+    search_builder = search_builder.where(f"version = '{safe_version}'")
+    
+    if library_name:
+        safe_name = _escape_sql_string(library_name)
+        search_builder = search_builder.where(f"library_name = '{safe_name}'")
+    
+    results = search_builder.limit(top_k).to_list()
+```
+
+### Key Components
+
+1. **Query Embedding:** The query text is converted to a vector using the same embedding model used for documents
+2. **Hybrid Builder:** LanceDB's `search(query_type="hybrid")` enables hybrid mode
+3. **Dual Input:** Both `.text(query)` (for BM25) and `.vector(query_vec)` (for semantic) are provided
+4. **Filtering:** Version and library filters are applied as SQL WHERE clauses
+5. **Result Limit:** `top_k` controls the number of results returned
+
+## Why Hybrid Search?
+
+### Vector Search Alone
+
+**Strengths:**
+- Understands semantic similarity
+- Handles synonyms and paraphrases
+- Good for conceptual queries
+
+**Weaknesses:**
+- Can miss exact keyword matches
+- May retrieve semantically similar but contextually wrong results
+- Sensitive to embedding model quality
+
+**Example:** Query "GPU acceleration" might miss documentation that uses "CUDA" instead
+
+### BM25 Alone
+
+**Strengths:**
+- Excellent for exact term matching
+- Fast and deterministic
+- Good for technical terms and code
+
+**Weaknesses:**
+- No semantic understanding
+- Misses synonyms and paraphrases
+- Sensitive to term frequency
+
+**Example:** Query "how to speed up indexing" won't match "performance optimization" documentation
+
+### Hybrid Search (Best of Both)
+
+By combining both methods, hybrid search:
+- Finds exact keyword matches (via BM25)
+- Captures semantic relevance (via vectors)
+- Provides more robust ranking
+- Reduces false negatives
+
+## Query Flow
+
+The complete query flow:
+
+```
+┌─────────────────┐
+│  User Query     │
+│  "GPU setup"    │
+└────────┬────────┘
+         │
+         ├─────────────────────────┬──────────────────────┐
+         ▼                         ▼                      ▼
+  ┌─────────────┐          ┌──────────────┐      ┌──────────────┐
+  │ Generate    │          │ BM25 Text    │      │ SQL Filters  │
+  │ Embedding   │          │ Search       │      │ (version,    │
+  │ Vector      │          │ (keyword)    │      │  library)    │
+  └──────┬──────┘          └──────┬───────┘      └──────┬───────┘
+         │                        │                     │
+         └────────────────────────┴─────────────────────┘
+                                  │
+                           ┌──────▼──────┐
+                           │   LanceDB   │
+                           │   Hybrid    │
+                           │   Search    │
+                           └──────┬──────┘
+                                  │
+                           ┌──────▼──────┐
+                           │   Merged    │
+                           │   Results   │
+                           │  (top_k)    │
+                           └─────────────┘
+```
+
+## Result Scoring
+
+Each result includes a relevance score (`query.py:117-123`):
+
+```python
+for idx, item in enumerate(results, start=1):
+    title = item.get("title") or "(no title)"
+    snippet = (item.get("content") or "").strip()
+    source = item.get("url") or "unknown"
+    score = item.get("_distance") or item.get("_score")
+    
+    if isinstance(score, (int, float)):
+        score_str = f", score={score:.4f}"
+```
+
+The score combines:
+- **Vector distance:** Lower is better (cosine distance)
+- **BM25 score:** Higher is better (statistical relevance)
+
+LanceDB automatically normalizes and combines these scores.
+
+## Tuning Parameters
+
+### Top-K Results
+
+Control the number of results returned:
+
+```python
+results = search(
+    query="hybrid search",
+    version="1.0",
+    top_k=20  # Default: 10
+)
+```
+
+**Recommendations:**
+- **User-facing queries:** 5-10 results
+- **LLM context retrieval:** 10-20 results
+- **Comprehensive analysis:** 20-50 results
+
+<Note>
+Larger `top_k` values increase latency and token usage when passing to LLMs.
+</Note>
+
+### Embedding Model Selection
+
+The embedding model affects semantic search quality:
+
+```yaml
+embeddings:
+  embedding_model: "BAAI/bge-small-en-v1.5"  # Fast, good quality
+  # embedding_model: "BAAI/bge-base-en-v1.5"  # Better quality, slower
+  # embedding_model: "BAAI/bge-large-en-v1.5"  # Best quality, slowest
+```
+
+**Trade-offs:**
+- **Small models:** Faster embedding, lower memory, slightly lower accuracy
+- **Large models:** Better semantic understanding, higher memory/compute cost
+
+For most use cases, the default `bge-small-en-v1.5` provides excellent quality-to-speed ratio.
+
+## Query Optimization
+
+### SQL Filtering
+
+OpenGround applies filters using SQL WHERE clauses (`query.py:98-103`):
+
+```python
+safe_version = _escape_sql_string(version)
+search_builder = search_builder.where(f"version = '{safe_version}'")
+
+if library_name:
+    safe_name = _escape_sql_string(library_name)
+    search_builder = search_builder.where(f"library_name = '{safe_name}'")
+```
+
+<Warning>
+All user input is escaped using `_escape_sql_string()` to prevent SQL injection.
+</Warning>
+
+The escaping function (`query.py:46-65`):
+
+```python
+def _escape_sql_string(value: str) -> str:
+    """Escape a string value for safe use in LanceDB SQL WHERE clauses."""
+    # Remove null bytes
+    value = value.replace("\x00", "")
+    # Escape backslashes first
+    value = value.replace("\\", "\\\\")
+    # Escape single quotes (SQL standard: ' becomes '')
+    value = value.replace("'", "''")
+    return value
+```
+
+### Caching
+
+Query module uses multiple caches to improve performance (`query.py:12-43`):
+
+```python
+# Caches for database connection and table
+_db_cache: dict[str, Any] = {}
+_table_cache: dict[tuple[str, str], Any] = {}
+_metadata_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+def _get_db(db_path: Path) -> "lancedb.DBConnection":
+    """Get a cached database connection."""
+    path_str = str(db_path)
+    if path_str not in _db_cache:
+        _db_cache[path_str] = lancedb.connect(path_str)
+    return _db_cache[path_str]
+
+def _get_table(db_path: Path, table_name: str) -> Optional["lancedb.table.Table"]:
+    """Get a cached table handle."""
+    cache_key = (str(db_path), table_name)
+    if cache_key not in _table_cache:
+        db = _get_db(db_path)
+        if table_name not in db.table_names():
+            return None
+        _table_cache[cache_key] = db.open_table(table_name)
+    return _table_cache[cache_key]
+```
+
+This avoids reopening database connections and table handles on each query.
+
+## Performance Considerations
+
+### Query Latency
+
+Typical query latency breakdown:
+
+1. **Embedding generation:** 10-100ms (depends on model and backend)
+2. **Hybrid search:** 10-50ms (depends on index size)
+3. **Result formatting:** Less than 5ms
+
+**Total:** 20-155ms for most queries
+
+### Optimizing Query Speed
+
+1. **Use fastembed backend:** Faster embedding generation
+2. **Enable GPU:** 10x faster embeddings (see [GPU Acceleration](/advanced/gpu-acceleration))
+3. **Reduce top_k:** Fewer results = faster search
+4. **Keep index warm:** First query may be slower due to cache loading
+
+### Scaling Considerations
+
+- **Index size:** Hybrid search scales sub-linearly with document count
+- **Concurrent queries:** LanceDB supports concurrent reads efficiently
+- **Memory usage:** Keeps index in memory for fast access
+
+## Full Content Retrieval
+
+Search returns snippets, but you can fetch complete documents (`query.py:211-251`):
+
+```python
+def get_full_content(
+    url: str,
+    version: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> str:
+    """Retrieve the full content of a document by its URL and version."""
+    table = _get_table(db_path, table_name)
+    
+    # Query all chunks for this URL and version
+    safe_url = _escape_sql_string(url)
+    safe_version = _escape_sql_string(version)
+    df = (
+        table.search()
+        .where(f"url = '{safe_url}' AND version = '{safe_version}'")
+        .select(["title", "content", "chunk_index"])
+        .to_pandas()
+    )
+    
+    # Sort by chunk_index and concatenate content
+    df = df.sort_values("chunk_index")
+    full_content = "\n\n".join(df["content"].tolist())
+```
+
+This reconstructs full documents from chunks stored in the index.
+
+## Example Queries
+
+### Basic Search
+
+```python
+from openground.query import search
+
+results = search(
+    query="How do I configure GPU acceleration?",
+    version="1.0.0",
+    library_name="openground",
+    top_k=5
+)
+print(results)
+```
+
+### Advanced Filtering
+
+```python
+# Search across all libraries
+results = search(
+    query="authentication setup",
+    version="latest",
+    library_name=None,  # Search all libraries
+    top_k=10
+)
+```
+
+### Programmatic Access
+
+```python
+from openground.query import _get_table
+from openground.embeddings import generate_embeddings
+
+# Direct access to results
+table = _get_table(db_path, table_name)
+query_vec = generate_embeddings(["my query"])[0]
+
+results = (
+    table.search(query_type="hybrid")
+    .text("my query")
+    .vector(query_vec)
+    .limit(10)
+    .to_list()
+)
+
+# Process results
+for result in results:
+    print(result["title"], result["_score"])
+```
+
+## Troubleshooting
+
+### No Results Found
+
+**Causes:**
+- Version mismatch in filter
+- Library name mismatch
+- No documents indexed for that version
+
+**Solutions:**
+1. Check available versions: `openground list`
+2. Verify indexing completed successfully
+3. Try broader query terms
+
+### Irrelevant Results
+
+**Causes:**
+- Query too vague
+- Embedding model mismatch
+- BM25 overwhelming semantic signal
+
+**Solutions:**
+1. Make query more specific
+2. Increase `top_k` to see more results
+3. Re-index with better embedding model
+
+### Slow Queries
+
+**Causes:**
+- Large index size
+- Slow embedding generation
+- Cold cache
+
+**Solutions:**
+1. Enable GPU acceleration
+2. Use fastembed backend
+3. Reduce `top_k`
+4. Run a warmup query
+
+## Next Steps
+
+- Learn about [Embedding Backends](/advanced/embedding-backends) to optimize semantic search
+- Explore [GPU Acceleration](/advanced/gpu-acceleration) to speed up query embedding generation

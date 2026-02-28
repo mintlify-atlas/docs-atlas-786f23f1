@@ -1,0 +1,212 @@
+---
+title: search_documents_tool
+description: Search official documentation across multiple libraries and versions
+---
+
+## Overview
+
+The `search_documents_tool` performs hybrid semantic search (combining vector embeddings and BM25) against the OpenGround documentation database to find relevant content from official library documentation.
+
+<Note>
+Always call `list_libraries_tool` first to verify which libraries and versions are available before searching.
+</Note>
+
+## Parameters
+
+<ParamField path="query" type="string" required>
+  The search query text. This will be used for both semantic (embedding-based) and keyword (BM25) search.
+  
+  **Example:** "How do I configure async timeout settings?"
+</ParamField>
+
+<ParamField path="library_name" type="string" required>
+  The name of the library to search within. Must match exactly (case-sensitive) with available libraries.
+  
+  **Example:** "fastapi", "django", "react"
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  The version of the library documentation to search. Must be an exact match with available versions.
+  
+  **Example:** "3.11.0", "latest", "v4.5.2"
+</ParamField>
+
+## Return Format
+
+Returns a formatted string containing search results. The format varies based on whether matches are found:
+
+### Successful Search
+
+```
+Found {count} match(es).
+1. **{title}**: "{content_snippet}" (Source: {url}, Version: {version}, score={similarity_score})
+   To get full page content: {"tool": "get_full_content", "url": "{url}", "version": "{version}"}
+2. **{title}**: "{content_snippet}" (Source: {url}, Version: {version}, score={similarity_score})
+   To get full page content: {"tool": "get_full_content", "url": "{url}", "version": "{version}"}
+...
+```
+
+### No Matches
+
+```
+Found 0 matches.
+```
+
+### Library Not Found
+
+```
+Library '{library_name}' not found. Available libraries: {comma_separated_list}
+```
+
+### Version Not Found
+
+```
+Version '{version}' not found for library '{library_name}'. Available versions: {comma_separated_list}
+```
+
+## Response Fields
+
+Each search result includes:
+
+<ResponseField name="title" type="string">
+  The title of the documentation page or section
+</ResponseField>
+
+<ResponseField name="content" type="string">
+  The full text content of the matching chunk (not truncated)
+</ResponseField>
+
+<ResponseField name="url" type="string">
+  The source URL of the documentation page
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  The version of the documentation
+</ResponseField>
+
+<ResponseField name="score" type="number">
+  The relevance score from the hybrid search algorithm (lower is more relevant for distance-based metrics)
+</ResponseField>
+
+<ResponseField name="tool_hint" type="json">
+  A JSON object with parameters for calling `get_full_content_tool` to retrieve the complete page content
+</ResponseField>
+
+## Example Usage
+
+### Basic Search
+
+```json
+{
+  "query": "How do I handle authentication middleware?",
+  "library_name": "fastapi",
+  "version": "0.104.0"
+}
+```
+
+**Response:**
+```
+Found 3 matches.
+1. **Security - First Steps**: "OAuth2 with Password (and hashing), Bearer with JWT tokens. You can use OAuth2 with password flow for authentication..." (Source: https://fastapi.tiangolo.com/tutorial/security/first-steps/, Version: 0.104.0, score=0.2341)
+   To get full page content: {"tool": "get_full_content", "url": "https://fastapi.tiangolo.com/tutorial/security/first-steps/", "version": "0.104.0"}
+2. **Middleware**: "You can add middleware to FastAPI applications. A middleware is a function that works with every request..." (Source: https://fastapi.tiangolo.com/tutorial/middleware/, Version: 0.104.0, score=0.2876)
+   To get full page content: {"tool": "get_full_content", "url": "https://fastapi.tiangolo.com/tutorial/middleware/", "version": "0.104.0"}
+...
+```
+
+### Invalid Library
+
+```json
+{
+  "query": "async functions",
+  "library_name": "nonexistent-lib",
+  "version": "1.0.0"
+}
+```
+
+**Response:**
+```
+Library 'nonexistent-lib' not found. Available libraries: django, fastapi, flask, react, vue
+```
+
+## How It Works
+
+### Hybrid Search Algorithm
+
+The tool uses a two-pronged search approach:
+
+1. **Semantic Search**: Generates embeddings for the query using `BAAI/bge-small-en-v1.5` (384 dimensions) and performs vector similarity search
+2. **BM25 Keyword Search**: Performs traditional keyword matching using BM25 algorithm
+3. **Fusion**: Combines results from both approaches to provide more accurate results
+
+### Caching Behavior
+
+- **Library metadata**: Cached after first call to `list_libraries_with_versions`
+- **Embedding model**: Pre-loaded in background thread during server startup
+- **Database connection**: Connection pooling for efficient query execution
+
+### Query Configuration
+
+The number of results returned is controlled by the `top_k` configuration:
+
+- Default: 5 results
+- Configurable via `~/.config/openground/config.json` under `query.top_k`
+- Maximum recommended: 20 results for optimal performance
+
+## Best Practices
+
+<Tip>
+**Always verify library and version availability first:**
+
+1. Call `list_libraries_tool` to get available options
+2. Select the appropriate library and version
+3. Then call `search_documents_tool` with exact matches
+</Tip>
+
+<Warning>
+Library names and versions are case-sensitive. Ensure exact matches to avoid "not found" errors.
+</Warning>
+
+### Effective Query Writing
+
+- **Be specific**: "JWT token validation" instead of "security"
+- **Use technical terms**: "async/await" instead of "asynchronous code"
+- **Include context**: "React hooks useState" instead of just "hooks"
+- **Avoid over-qualification**: Don't include the library name in the query (it's already filtered)
+
+### Following Up on Results
+
+When you need more context from a search result:
+
+1. Use the embedded `tool_hint` JSON object
+2. Call `get_full_content_tool` with the provided `url` and `version`
+3. This retrieves the complete documentation page (all chunks reassembled)
+
+## Troubleshooting
+
+### Empty Results
+
+If you get `Found 0 matches`:
+
+- Try broader search terms
+- Check if you're searching the correct library version
+- Verify the documentation actually covers that topic
+- Try searching related terms or concepts
+
+### Slow Performance
+
+If searches are taking too long:
+
+- Wait for background initialization to complete (check server logs)
+- Reduce `top_k` in configuration
+- Ensure database is on SSD storage
+- Check if embedding model is cached (first query pre-loads it)
+
+### Accuracy Issues
+
+If results aren't relevant:
+
+- Refine your query to be more specific
+- Try using exact technical terminology from the documentation
+- Increase `top_k` to see more results
+- Consider that the content might not exist in that version's documentation

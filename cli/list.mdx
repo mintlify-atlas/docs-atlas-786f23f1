@@ -1,0 +1,96 @@
+---
+title: openground list
+description: List available libraries and their versions
+---
+
+List libraries stored in the vector database or in the raw data directory.
+
+## Commands
+
+### list-libraries (ls)
+
+List available libraries and their versions stored in the local vector database.
+
+```bash
+openground list-libraries
+openground ls  # Shorthand alias
+```
+
+#### Output Example
+
+```
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Library    ┃ Versions                ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ langchain  │ latest                  │
+│ openai     │ v1.0.0, v1.1.0, latest  │
+│ mylib      │ latest                  │
+└────────────┴─────────────────────────┘
+```
+
+### list-raw-libraries
+
+List available libraries in the raw_data directory (before embedding).
+
+```bash
+openground list-raw-libraries
+```
+
+#### Output Example
+
+```
+Available libraries in raw_data:
+langchain: latest
+openai: v1.0.0, v1.1.0, latest
+mylib: latest, local-2026-02-28
+```
+
+## Use Cases
+
+### Check What's Installed
+
+```bash
+# Check embedded libraries (in vector database)
+openground ls
+
+# Check extracted libraries (not yet embedded)
+openground list-raw-libraries
+```
+
+### Before Querying
+
+Verify which libraries and versions are available:
+
+```bash
+openground ls
+openground query "search term" --library langchain --version latest
+```
+
+### Before Removing
+
+See what libraries exist before removing:
+
+```bash
+openground ls
+openground remove langchain --version latest
+```
+
+## Differences
+
+| Command | Source | Status |
+|---------|--------|--------|
+| `list-libraries` | Vector database | Embedded and searchable |
+| `list-raw-libraries` | Raw data directory | Extracted but not embedded |
+
+### Why Two Commands?
+
+Libraries appear in `list-raw-libraries` after extraction but before embedding. Use this to:
+- Debug extraction issues
+- Check what was extracted before embedding
+- See if raw files exist for re-embedding
+
+## Related Commands
+
+- [openground add](/cli/add) - Add new libraries
+- [openground remove](/cli/remove) - Remove libraries
+- [openground query](/cli/query) - Search libraries

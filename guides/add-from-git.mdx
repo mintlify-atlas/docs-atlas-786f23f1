@@ -1,0 +1,307 @@
+---
+title: "Adding Documentation from Git Repositories"
+description: "Learn how to add and manage documentation from git repositories in OpenGround"
+---
+
+## Overview
+
+OpenGround can extract documentation directly from git repositories using shallow clones and sparse checkout for efficiency. This is ideal for versioned documentation that uses git tags.
+
+## Supported File Types
+
+When extracting from git repositories, OpenGround processes the following file extensions:
+
+- `.md` - Markdown
+- `.mdx` - MDX (Markdown with JSX)
+- `.rst` - reStructuredText
+- `.txt` - Plain text
+- `.ipynb` - Jupyter Notebooks
+- `.html` - HTML
+- `.htm` - HTML
+
+## Basic Usage
+
+<Steps>
+  <Step title="Add documentation with source URL">
+    Use the `add` command with the `--source` flag to specify a git repository:
+
+    ```bash
+    openground add library-name \
+      --source https://github.com/example/example.git \
+      -y
+    ```
+
+    The `-y` flag skips the confirmation prompt between extract and ingest.
+  </Step>
+
+  <Step title="Verify the library was added">
+    List all libraries in your database:
+
+    ```bash
+    openground list-libraries
+    # or
+    openground ls
+    ```
+  </Step>
+</Steps>
+
+## Specifying Documentation Paths
+
+If documentation is in a specific subdirectory, use the `--docs-path` flag:
+
+```bash
+openground add fastapi \
+  --source https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  -y
+```
+
+### Multiple Documentation Paths
+
+You can specify multiple paths by using the `--docs-path` flag multiple times:
+
+```bash
+openground add library-name \
+  --source https://github.com/example/example.git \
+  --docs-path docs/ \
+  --docs-path wiki/ \
+  --docs-path guides/ \
+  -y
+```
+
+### Indexing Entire Repository
+
+If you don't specify `--docs-path`, OpenGround will index the entire repository:
+
+```bash
+# Indexes all supported files in the repository
+openground add library-name \
+  --source https://github.com/example/example.git \
+  -y
+```
+
+## Version Management
+
+### Using Git Tags
+
+The `--version` flag allows you to specify a git tag to checkout:
+
+```bash
+openground add fastapi \
+  --source https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  --version v0.109.0 \
+  -y
+```
+
+This corresponds to the tag in the git repository (e.g., `v0.109.0`, `1.0.0`, etc.).
+
+### Default Version
+
+If no version is specified, OpenGround defaults to `latest`:
+
+```bash
+# Uses version "latest"
+openground add library-name \
+  --source https://github.com/example/example.git \
+  -y
+```
+
+### Multiple Versions
+
+You can store multiple versions of the same library independently:
+
+```bash
+# Add version 1.0.0
+openground add mylib \
+  --source https://github.com/example/mylib.git \
+  --version v1.0.0 \
+  -y
+
+# Add version 2.0.0
+openground add mylib \
+  --source https://github.com/example/mylib.git \
+  --version v2.0.0 \
+  -y
+
+# Query specific version
+openground query "how to install" --library mylib --version v1.0.0
+```
+
+<Warning>
+  The `--version` flag **only works with git repositories**. Sitemap sources always use `latest`, and local path sources use date-based versions (e.g., `local-2026-02-28`).
+</Warning>
+
+## Parsing GitHub Web URLs
+
+OpenGround can automatically parse GitHub and GitLab web URLs:
+
+```bash
+# Web URL with branch/tag and path
+openground add library-name \
+  --source https://github.com/user/repo/tree/v1.0/docs \
+  -y
+```
+
+OpenGround will automatically extract:
+- Repository URL: `https://github.com/user/repo.git`
+- Version: `v1.0`
+- Docs path: `docs`
+
+## All Available Flags
+
+```bash
+openground add LIBRARY [OPTIONS]
+```
+
+### Arguments
+
+- `LIBRARY` - Name of the library (required)
+
+### Options
+
+- `--source, -s TEXT` - Git repo URL (e.g., `https://github.com/user/repo.git`)
+- `--version, -v TEXT` - Git tag to checkout (e.g., `v1.0.0`, defaults to `latest`)
+- `--docs-path, -d TEXT` - Path(s) to documentation within the repo (can be specified multiple times)
+- `--yes, -y` - Skip confirmation prompt between extract and ingest
+- `--sources-file TEXT` - Path to a custom sources.json file
+
+<Note>
+  The following flags are for sitemap sources only and are ignored for git repositories:
+  - `--filter-keyword, -f` - Not applicable to git repos
+  - `--trim-query-params` - Not applicable to git repos
+</Note>
+
+## Using Sources Files
+
+When you add documentation with `--source`, OpenGround automatically saves the configuration to `~/.openground/sources.json`. This allows you to re-add or update the library later using just the name:
+
+<Steps>
+  <Step title="First time: Add with source">
+    ```bash
+    openground add fastapi \
+      --source https://github.com/tiangolo/fastapi.git \
+      --docs-path docs/ \
+      --version v0.109.0 \
+      -y
+    ```
+
+    This saves the configuration to `~/.openground/sources.json`.
+  </Step>
+
+  <Step title="Later: Add by name only">
+    ```bash
+    # Uses saved configuration
+    openground add fastapi --version v0.110.0 -y
+    ```
+
+    The source URL and docs path are retrieved from sources.json.
+  </Step>
+</Steps>
+
+See [Managing sources.json files](/guides/sources-files) for more details.
+
+## Updating Documentation
+
+To update an existing library with changes from the source:
+
+```bash
+openground update library-name --version latest -y
+```
+
+This efficiently updates only changed pages by comparing content hashes. The `update` command is an alias for `add` when a library already exists.
+
+<CodeGroup>
+```bash Git with Version
+openground add fastembed \
+  --source https://github.com/qdrant/fastembed.git \
+  --docs-path docs/ \
+  --version v0.7.4 \
+  -y
+```
+
+```bash Git Multiple Paths
+openground add library-name \
+  --source https://github.com/example/repo.git \
+  --docs-path docs/ \
+  --docs-path wiki/ \
+  --version v2.0.0 \
+  -y
+```
+
+```bash GitHub Web URL
+# Automatically extracts repo, version, and path
+openground add library-name \
+  --source https://github.com/user/repo/tree/main/docs \
+  -y
+```
+
+```bash From Sources File
+# After initial add, use name only
+openground add fastapi --version v0.110.0 -y
+```
+</CodeGroup>
+
+## Advanced: Direct Extract Command
+
+For advanced use cases, you can use the `extract-git` command separately:
+
+```bash
+openground extract-git \
+  --repo-url https://github.com/example/example.git \
+  --docs-path docs/ \
+  --library library-name \
+  --version v1.0.0
+```
+
+Then embed separately:
+
+```bash
+openground embed library-name --version v1.0.0
+```
+
+<Warning>
+  The `extract-git` command requires at least one `--docs-path` argument. Use `/` to extract the entire repository.
+</Warning>
+
+## Examples
+
+### FastAPI Documentation
+
+```bash
+openground add fastapi \
+  --source https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  --version v0.109.0 \
+  -y
+```
+
+### Multiple Versions Workflow
+
+```bash
+# Add stable version
+openground add myframework \
+  --source https://github.com/org/myframework.git \
+  --docs-path documentation/ \
+  --version v3.2.1 \
+  -y
+
+# Add latest development version
+openground add myframework \
+  --source https://github.com/org/myframework.git \
+  --docs-path documentation/ \
+  --version latest \
+  -y
+
+# Query specific version
+openground query "authentication" --library myframework --version v3.2.1
+```
+
+### Entire Repository
+
+```bash
+# Index all markdown files in repository
+openground add awesome-project \
+  --source https://github.com/user/awesome-project.git \
+  -y
+```

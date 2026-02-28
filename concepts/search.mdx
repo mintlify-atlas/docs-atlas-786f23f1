@@ -1,0 +1,744 @@
+---
+title: Search
+description: Understanding hybrid search, vector similarity, BM25 full-text search, and query flow in OpenGround
+---
+
+OpenGround uses **hybrid search** combining two complementary techniques: **vector similarity** (semantic search) and **BM25** (keyword search). This approach finds relevant documentation even when queries use different terminology than the source material.
+
+## Hybrid Search Architecture
+
+```mermaid
+graph TB
+    Query[User Query: "how to add dependencies"]
+    
+    Query --> Embed[Generate Query Embedding]
+    Query --> BM25[BM25 Tokenization]
+    
+    Embed --> Vector[Vector Similarity Search]
+    BM25 --> Keyword[Keyword Search]
+    
+    Vector --> Merge[Merge & Rerank]
+    Keyword --> Merge
+    
+    Merge --> Filter[Filter by Version/Library]
+    Filter --> Results[Top K Results]
+    
+    DB[(LanceDB<br/>Vector Index<br/>+ BM25 Index)]
+    
+    Vector -.-> DB
+    Keyword -.-> DB
+```
+
+### Why Hybrid?
+
+<Tabs>
+  <Tab title="Vector Similarity">
+    **Strengths:**
+    - Finds conceptually similar content
+    - Works with synonyms and paraphrasing
+    - Understands context and intent
+    
+    **Example:**
+    ```
+    Query: "how to install packages"
+    Matches:
+    - "Adding dependencies to your project"
+    - "Package management guide"
+    - "Setting up requirements.txt"
+    ```
+    
+    **Weaknesses:**
+    - May miss exact technical terms
+    - Can retrieve overly broad matches
+  </Tab>
+  
+  <Tab title="BM25 (Keyword)">
+    **Strengths:**
+    - Exact term matching
+    - Great for technical jargon, function names, APIs
+    - Predictable and explainable
+    
+    **Example:**
+    ```
+    Query: "FastAPI dependencies"
+    Matches:
+    - Pages with "FastAPI" and "dependencies"
+    - Boosts pages where terms appear frequently
+    - Considers term rarity (IDF)
+    ```
+    
+    **Weaknesses:**
+    - Misses synonyms and paraphrasing
+    - No understanding of context
+  </Tab>
+  
+  <Tab title="Hybrid">
+    **Combines both:**
+    - Vector search finds semantic matches
+    - BM25 ensures exact terms aren't missed
+    - LanceDB merges and reranks results
+    
+    **Result:**
+    Best of both worlds - semantic understanding with keyword precision.
+  </Tab>
+</Tabs>
+
+## Query Flow
+
+Let's trace a search query through OpenGround's system.
+
+### 1. Query Input
+
+From the CLI or MCP server:
+
+```bash
+openground query "how to configure embeddings" -l openground -v latest
+```
+
+Or from an AI agent via MCP:
+
+```json
+{
+  "tool": "search_documentation",
+  "arguments": {
+    "query": "how to configure embeddings",
+    "library_name": "openground",
+    "version": "latest"
+  }
+}
+```
+
+### 2. Query Embedding
+
+From `query.py:94`, the query is converted to a vector:
+
+```python
+from openground.embeddings import generate_embeddings
+
+query_vec = generate_embeddings([query], show_progress=show_progress)[0]
+# Returns: [0.23, -0.15, 0.87, ...] (384 dimensions)
+```
+
+<Info>
+Query embedding uses the same model as document embedding, ensuring they're in the same vector space.
+</Info>
+
+### 3. Hybrid Search Execution
+
+From `query.py:96-104`, LanceDB performs the hybrid search:
+
+```python
+def search(
+    query: str,
+    version: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+    library_name: Optional[str] = None,
+    top_k: int = 10,
+    show_progress: bool = True,
+) -> str:
+    table = _get_table(db_path, table_name)
+    query_vec = generate_embeddings([query], show_progress=show_progress)[0]
+    
+    # Build hybrid search
+    search_builder = table.search(query_type="hybrid") \
+                          .text(query) \      # BM25 component
+                          .vector(query_vec)   # Vector component
+    
+    # Apply filters
+    safe_version = _escape_sql_string(version)
+    search_builder = search_builder.where(f"version = '{safe_version}'")
+    
+    if library_name:
+        safe_name = _escape_sql_string(library_name)
+        search_builder = search_builder.where(f"library_name = '{safe_name}'")
+    
+    # Execute and return top K
+    results = search_builder.limit(top_k).to_list()
+```
+
+<Steps>
+  <Step title="Query Type: Hybrid">
+    ```python
+    search_builder = table.search(query_type="hybrid")
+    ```
+    
+    Tells LanceDB to combine vector and BM25 search.
+  </Step>
+  
+  <Step title="BM25 Component">
+    ```python
+    .text(query)
+    ```
+    
+    Performs keyword search using the full-text index on the `content` field.
+  </Step>
+  
+  <Step title="Vector Component">
+    ```python
+    .vector(query_vec)
+    ```
+    
+    Performs cosine similarity search in the vector space.
+  </Step>
+  
+  <Step title="Metadata Filtering">
+    ```python
+    .where(f"version = '{safe_version}'")
+    .where(f"library_name = '{safe_name}'")
+    ```
+    
+    Filters results to specific library/version before ranking.
+  </Step>
+  
+  <Step title="Limit Results">
+    ```python
+    .limit(top_k)
+    ```
+    
+    Returns only the top K highest-scoring chunks.
+  </Step>
+</Steps>
+
+### 4. Result Ranking
+
+LanceDB internally combines scores from both search types:
+
+```python
+# Simplified conceptual model (actual implementation is in LanceDB)
+for chunk in chunks:
+    # Vector similarity (cosine)
+    vector_score = cosine_similarity(query_vec, chunk.vector)
+    
+    # BM25 score
+    bm25_score = bm25(query_text, chunk.content)
+    
+    # Combine (LanceDB uses learned fusion)
+    combined_score = merge_scores(vector_score, bm25_score)
+    
+    chunk.score = combined_score
+
+# Sort by combined score and return top K
+results = sorted(chunks, key=lambda c: c.score, reverse=True)[:top_k]
+```
+
+<Note>
+LanceDB's hybrid search uses sophisticated score fusion techniques. The exact algorithm is internal to LanceDB.
+</Note>
+
+### 5. Result Formatting
+
+From `query.py:110-134`, results are formatted for the user:
+
+```python
+if not results:
+    return "Found 0 matches."
+
+lines = [f"Found {len(results)} match{'es' if len(results) != 1 else ''}."]
+for idx, item in enumerate(results, start=1):
+    title = item.get("title") or "(no title)"
+    snippet = (item.get("content") or "").strip()
+    source = item.get("url") or "unknown"
+    item_version = item.get("version") or version
+    score = item.get("_distance") or item.get("_score")
+    
+    score_str = ""
+    if isinstance(score, (int, float)):
+        score_str = f", score={score:.4f}"
+    
+    # Embed tool call hint for fetching full content
+    tool_hint = json.dumps(
+        {"tool": "get_full_content", "url": source, "version": item_version}
+    )
+    
+    lines.append(
+        f'{idx}. **{title}**: "{snippet}" (Source: {source}, Version: {item_version}{score_str})\n'
+        f"   To get full page content: {tool_hint}"
+    )
+
+return "\n".join(lines)
+```
+
+**Example output:**
+
+```markdown
+Found 3 matches.
+1. **Configuration**: "OpenGround's behavior is controlled through a hierarchical..." (Source: https://github.com/user/repo/docs/config.md, Version: latest, score=0.8234)
+   To get full page content: {"tool": "get_full_content", "url": "https://...", "version": "latest"}
+2. **Embedding Settings**: "You can configure the embedding model and backend..." (Source: https://github.com/user/repo/docs/embeddings.md, Version: latest, score=0.7891)
+   To get full page content: {"tool": "get_full_content", "url": "https://...", "version": "latest"}
+...
+```
+
+## BM25 Full-Text Search
+
+BM25 (Best Matching 25) is a probabilistic ranking function for keyword search.
+
+### BM25 Index Creation
+
+From `ingest.py:223-226`, the full-text index is created after ingestion:
+
+```python
+table.add(all_records)  # Add chunks with embeddings
+
+try:
+    table.create_fts_index("content", replace=True)
+except Exception as exc:
+    print(f"FTS index creation skipped: {exc}")
+```
+
+<Info>
+The `content` field is indexed for full-text search. This enables BM25 scoring on chunk text.
+</Info>
+
+### How BM25 Works
+
+BM25 ranks documents based on:
+
+<Tabs>
+  <Tab title="Term Frequency (TF)">
+    How often a query term appears in the document.
+    
+    ```python
+    # Simplified
+    tf = count(term, document) / len(document)
+    
+    # Example
+    Query: "embeddings"
+    Doc A: "embeddings" appears 5 times in 100 words → high TF
+    Doc B: "embeddings" appears 1 time in 100 words → low TF
+    ```
+    
+    **Saturation**: BM25 uses diminishing returns - 5 mentions isn't 5x better than 1.
+  </Tab>
+  
+  <Tab title="Inverse Document Frequency (IDF)">
+    How rare the term is across all documents.
+    
+    ```python
+    # Simplified
+    idf = log(total_docs / docs_containing(term))
+    
+    # Example
+    Query: "FastAPI OpenAPI"
+    - "FastAPI": appears in 100/1000 docs → medium IDF
+    - "OpenAPI": appears in 500/1000 docs → low IDF
+    - "the": appears in 999/1000 docs → very low IDF (ignored)
+    ```
+    
+    **Effect**: Rare terms (like technical jargon) boost scores more than common words.
+  </Tab>
+  
+  <Tab title="Document Length">
+    Normalizes for document length.
+    
+    ```python
+    # Longer documents aren't automatically better
+    length_norm = 1 - b + b * (doc_len / avg_doc_len)
+    
+    # Where b is a tuning parameter (usually 0.75)
+    ```
+    
+    **Effect**: Prevents long documents from dominating results.
+  </Tab>
+  
+  <Tab title="Combined Score">
+    ```python
+    # BM25 formula (simplified)
+    def bm25_score(query_terms, document):
+        score = 0
+        for term in query_terms:
+            tf = term_frequency(term, document)
+            idf = inverse_document_frequency(term)
+            
+            # BM25 with saturation
+            numerator = tf * (k1 + 1)
+            denominator = tf + k1 * (1 - b + b * doc_length_norm)
+            
+            score += idf * (numerator / denominator)
+        
+        return score
+    ```
+    
+    **Parameters**:
+    - `k1`: Term frequency saturation (default: 1.2)
+    - `b`: Length normalization (default: 0.75)
+  </Tab>
+</Tabs>
+
+### BM25 Example
+
+```python
+# Query: "configure embedding model"
+
+# Document A: "To configure the embedding model, use config.json..."
+# - "configure": 1 occurrence, medium IDF
+# - "embedding": 1 occurrence, low IDF (common in docs)
+# - "model": 1 occurrence, low IDF (common)
+# BM25 Score: 3.2
+
+# Document B: "The embedding model configuration allows you to..."
+# - "embedding": 1 occurrence
+# - "model": 1 occurrence  
+# - "configuration": 1 occurrence (synonym of "configure")
+# BM25 Score: 2.1 (lower - missed "configure")
+
+# Vector search might rank B higher due to semantic similarity,
+# but BM25 ensures A gets boosted for exact term match.
+```
+
+## Vector Similarity Search
+
+Vector search finds chunks with embeddings close to the query embedding.
+
+### Cosine Similarity
+
+From mathematical perspective:
+
+```python
+import numpy as np
+
+def cosine_similarity(vec_a, vec_b):
+    """Compute cosine similarity between two vectors."""
+    dot_product = np.dot(vec_a, vec_b)
+    norm_a = np.linalg.norm(vec_a)
+    norm_b = np.linalg.norm(vec_b)
+    return dot_product / (norm_a * norm_b)
+
+# Example
+query_vec = [0.5, 0.3, 0.8, ...]  # 384 dimensions
+chunk_vec = [0.6, 0.2, 0.7, ...]  # 384 dimensions
+
+similarity = cosine_similarity(query_vec, chunk_vec)
+# Returns: 0.92 (very similar)
+```
+
+<Info>
+Cosine similarity measures the angle between vectors, not their magnitude. Values range from -1 (opposite) to 1 (identical).
+</Info>
+
+### Normalized Embeddings
+
+From `embeddings.py:154`, embeddings are normalized:
+
+```python
+batch_embeddings = model.encode(
+    sentences=batch,
+    normalize_embeddings=True,  # L2 normalization
+    ...
+)
+```
+
+Normalization benefits:
+- Embeddings have unit length (magnitude = 1)
+- Cosine similarity simplifies to dot product
+- Faster computation: `similarity = dot(a, b)` instead of `dot(a, b) / (norm(a) * norm(b))`
+
+### Approximate Nearest Neighbor
+
+LanceDB uses **ANN (Approximate Nearest Neighbor)** indexes for fast vector search:
+
+```python
+# Exact search (slow for large datasets)
+for chunk in all_chunks:
+    scores.append(cosine_similarity(query_vec, chunk.vector))
+results = top_k(scores)
+# O(n) where n = number of chunks
+
+# ANN search (fast)
+results = ann_index.search(query_vec, k=top_k)
+# O(log n) with high accuracy
+```
+
+LanceDB automatically builds ANN indexes for the vector field.
+
+## Metadata Filtering
+
+From `query.py:98-103`, filters are applied **before** ranking:
+
+```python
+# SQL-style WHERE clauses
+search_builder = search_builder.where(f"version = '{safe_version}'")
+
+if library_name:
+    search_builder = search_builder.where(f"library_name = '{safe_name}'")
+```
+
+### Why Filter First?
+
+<Tabs>
+  <Tab title="Performance">
+    ```python
+    # Bad: Search all, then filter
+    results = search_all_chunks(query)  # 1M chunks
+    filtered = [r for r in results if r.version == "v1.0.0"]  # 1K chunks
+    # Wastes time searching irrelevant chunks
+    
+    # Good: Filter, then search
+    filtered_chunks = chunks.where("version = 'v1.0.0'")  # 1K chunks
+    results = search(filtered_chunks, query)
+    # Only searches relevant chunks
+    ```
+  </Tab>
+  
+  <Tab title="Accuracy">
+    Filtering ensures results are from the correct:
+    - Library (e.g., only FastAPI docs)
+    - Version (e.g., only v0.100.0 features)
+    
+    Without filtering, you might get results from:
+    - Different library with similar concepts
+    - Old version with deprecated features
+  </Tab>
+</Tabs>
+
+### SQL Injection Prevention
+
+From `query.py:46-65`, user input is escaped:
+
+```python
+def _escape_sql_string(value: str) -> str:
+    """Escape a string value for safe use in LanceDB SQL WHERE clauses."""
+    # Remove null bytes
+    value = value.replace("\x00", "")
+    # Escape backslashes first
+    value = value.replace("\\", "\\\\")
+    # Escape single quotes (SQL standard: ' becomes '')
+    value = value.replace("'", "''")
+    return value
+
+# Usage
+safe_version = _escape_sql_string(version)  # "v'1.0.0" → "v''1.0.0"
+search_builder.where(f"version = '{safe_version}'")
+```
+
+<Warning>
+Always escape user input in SQL WHERE clauses to prevent injection attacks.
+</Warning>
+
+## Retrieving Full Content
+
+Search results contain **chunk content** (800 chars). To get the full page, use `get_full_content` (from `query.py:211-251`):
+
+```python
+def get_full_content(
+    url: str,
+    version: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> str:
+    """Retrieve the full content of a document by its URL and version."""
+    table = _get_table(db_path, table_name)
+    
+    # Query all chunks for this URL and version
+    safe_url = _escape_sql_string(url)
+    safe_version = _escape_sql_string(version)
+    df = (
+        table.search()
+        .where(f"url = '{safe_url}' AND version = '{safe_version}'")
+        .select(["title", "content", "chunk_index"])
+        .to_pandas()
+    )
+    
+    if df.empty:
+        return f"No content found for URL: {url} (version: {version})"
+    
+    # Sort by chunk_index and concatenate content
+    df = df.sort_values("chunk_index")
+    full_content = "\n\n".join(df["content"].tolist())
+    
+    title = df.iloc[0].get("title", "(no title)")
+    return f"# {title}\n\nSource: {url}\nVersion: {version}\n\n{full_content}"
+```
+
+<Steps>
+  <Step title="Query All Chunks">
+    Find all chunks belonging to the same URL and version.
+  </Step>
+  
+  <Step title="Sort by Chunk Index">
+    Ensure chunks are in original order (chunk_index: 0, 1, 2, ...).
+  </Step>
+  
+  <Step title="Concatenate Content">
+    Join chunk content with double newlines to preserve formatting.
+  </Step>
+  
+  <Step title="Format as Markdown">
+    Return complete page with title, source, and full content.
+  </Step>
+</Steps>
+
+## Query Caching
+
+From `query.py:12-15`, database connections are cached:
+
+```python
+_db_cache: dict[str, Any] = {}
+_table_cache: dict[tuple[str, str], Any] = {}
+_metadata_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+def _get_db(db_path: Path) -> "lancedb.DBConnection":
+    """Get a cached database connection."""
+    path_str = str(db_path)
+    if path_str not in _db_cache:
+        _db_cache[path_str] = lancedb.connect(path_str)
+    return _db_cache[path_str]
+
+def _get_table(db_path: Path, table_name: str) -> Optional["lancedb.table.Table"]:
+    """Get a cached table handle."""
+    cache_key = (str(db_path), table_name)
+    if cache_key not in _table_cache:
+        db = _get_db(db_path)
+        if table_name not in db.table_names():
+            return None
+        _table_cache[cache_key] = db.open_table(table_name)
+    return _table_cache[cache_key]
+```
+
+<Info>
+Caching avoids reconnecting to the database for every query. Especially important for MCP server which handles many sequential requests.
+</Info>
+
+## Search Configuration
+
+From `config.py:69`, default top K:
+
+```python
+DEFAULT_TOP_K = 5
+```
+
+Configure with:
+
+```bash
+# Return more results by default
+openground config set query.top_k 10
+
+# Or specify per query
+openground query "my query" --top-k 20
+```
+
+<Tip>
+**Choosing top K:**
+- **Small (3-5)**: Precise, focused results for AI agents
+- **Medium (10-15)**: Good for exploratory queries
+- **Large (20+)**: Comprehensive coverage, but may include noise
+</Tip>
+
+## Performance Characteristics
+
+<Tabs>
+  <Tab title="Query Latency">
+    ```python
+    # Typical latency breakdown
+    Query embedding:     50-200ms  (depends on model/hardware)
+    Vector search:       10-50ms   (ANN index)
+    BM25 search:         5-20ms    (full-text index)
+    Score fusion:        1-5ms     (LanceDB internal)
+    Metadata filtering:  <1ms      (indexed columns)
+    Total:               ~100-300ms
+    ```
+    
+    **Factors:**
+    - Embedding model speed (GPU vs CPU)
+    - Number of chunks in database
+    - Complexity of filters
+  </Tab>
+  
+  <Tab title="Scalability">
+    ```python
+    # Performance with different dataset sizes
+    10K chunks:     ~100ms per query
+    100K chunks:    ~150ms per query  
+    1M chunks:      ~250ms per query
+    10M chunks:     ~500ms per query
+    
+    # ANN index ensures sub-linear scaling
+    ```
+    
+    LanceDB's ANN indexes scale well to millions of chunks.
+  </Tab>
+  
+  <Tab title="Storage">
+    ```python
+    # Storage per chunk (approximate)
+    Metadata:        ~200 bytes
+    Content text:    ~800 bytes (avg)
+    Vector (384d):   1,536 bytes
+    Indexes:         ~500 bytes
+    Total:           ~3 KB per chunk
+    
+    # For 100K chunks:
+    Total storage:   ~300 MB
+    ```
+  </Tab>
+</Tabs>
+
+## Search Quality Tips
+
+<AccordionGroup>
+  <Accordion title="Write Clear Queries">
+    **Good queries:**
+    - "how to configure embeddings"
+    - "FastAPI dependency injection"
+    - "error handling best practices"
+    
+    **Poor queries:**
+    - "stuff" (too vague)
+    - "asdfasdf" (gibberish)
+    - Single words without context
+  </Accordion>
+  
+  <Accordion title="Use Specific Technical Terms">
+    BM25 rewards exact matches:
+    
+    ```bash
+    # Good: Uses specific API name
+    "openground config set embeddings.embedding_model"
+    
+    # Less good: Vague
+    "change settings for vectors"
+    ```
+  </Accordion>
+  
+  <Accordion title="Filter by Version">
+    Always specify version for accurate results:
+    
+    ```bash
+    # Good: Specific version
+    openground query "new features" -l fastapi -v v0.100.0
+    
+    # Risk: Might mix results from old versions
+    openground query "new features" -l fastapi -v latest
+    ```
+  </Accordion>
+  
+  <Accordion title="Use get_full_content for Context">
+    Search results are chunks (800 chars). For complete context:
+    
+    ```python
+    # 1. Search to find relevant page
+    results = search("installation guide")
+    
+    # 2. Get full content of the page
+    full_page = get_full_content(results[0].url, results[0].version)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    See how search fits into OpenGround's architecture
+  </Card>
+  <Card title="Embeddings" icon="brain" href="/concepts/embeddings">
+    Deep dive into the vector embeddings powering semantic search
+  </Card>
+  <Card title="Sources" icon="folder-open" href="/concepts/sources">
+    Learn what documentation can be searched
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/reference/cli">
+    Complete reference for the query command
+  </Card>
+</CardGroup>

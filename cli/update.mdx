@@ -1,0 +1,112 @@
+---
+title: openground update
+description: Update an existing library with changes from the source
+---
+
+The `openground update` command efficiently updates an existing library by comparing content hashes and only updating changed pages.
+
+## Usage
+
+```bash
+openground update <library> [OPTIONS]
+```
+
+## Arguments
+
+<ParamField path="library" type="string" required>
+  Name of the library to update
+</ParamField>
+
+## Options
+
+<ParamField path="--version" type="string" default="latest">
+  Version to update.
+  
+  **Aliases:** `-v`
+</ParamField>
+
+<ParamField path="--source" type="string" default="None">
+  Override source URL. If not provided, uses the source from `~/.openground/sources.json`.
+  
+  **Aliases:** `-s`
+</ParamField>
+
+<ParamField path="--yes" type="boolean" default="false">
+  Skip prompts.
+  
+  **Aliases:** `-y`
+</ParamField>
+
+## Behavior
+
+The `update` command is an alias for the `add` command when a library already exists. It performs an incremental update by:
+
+1. Extracting all pages from the source
+2. Comparing content hashes with existing pages in the database
+3. Categorizing pages as:
+   - **Added:** New pages not in the database
+   - **Modified:** Pages with different content hashes
+   - **Deleted:** Pages in the database but not in the source
+   - **Unchanged:** Pages with identical content
+4. Updating only the changed pages
+
+### Efficient Updates
+
+Only pages that have been added, modified, or deleted are re-embedded and updated in the database. Unchanged pages are skipped, making updates fast and efficient.
+
+## Examples
+
+### Update from sources.json
+
+```bash
+openground update langchain
+```
+
+### Update Specific Version
+
+```bash
+openground update mylib --version v2.0.0
+```
+
+### Update with Override Source
+
+```bash
+openground update mylib --source https://github.com/user/repo
+```
+
+### Update Without Confirmation
+
+```bash
+openground update mylib -y
+```
+
+## Output Example
+
+```
+Using sources file: /home/user/.openground/sources.json
+Library 'langchain' version 'latest' already exists.
+Performing extraction and incremental update...
+
+✓ Extraction complete: 523 pages extracted to /home/user/.openground/raw_data/langchain/latest
+
+Update Summary:
+  Added: 12 pages
+  Modified: 8 pages
+  Deleted: 3 pages
+  Unchanged: 500 pages
+
+✓ Update complete: langchain (latest) updated.
+```
+
+## When to Use Update vs Add
+
+- **Use `update`:** When you want to explicitly update an existing library with the latest changes
+- **Use `add`:** When adding a new library for the first time, or when you want to add a new version
+
+Both commands behave identically when the library already exists in the database.
+
+## Related Commands
+
+- [openground add](/cli/add) - Add or update libraries
+- [openground list](/cli/list) - View installed libraries
+- [openground remove](/cli/remove) - Remove libraries

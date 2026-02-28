@@ -1,0 +1,587 @@
+---
+title: Sources
+description: How OpenGround extracts documentation from git repositories, sitemaps, and local directories
+---
+
+OpenGround can ingest documentation from three source types: **git repositories**, **sitemaps**, and **local directories**. Each source type has a dedicated extractor that produces standardized `ParsedPage` objects for downstream processing.
+
+## Source Types
+
+### Git Repositories
+
+Extract documentation from GitHub, GitLab, or any git repository with version control.
+
+<CodeGroup>
+```bash Basic Usage
+openground add fastapi \
+  --source https://github.com/tiangolo/fastapi.git \
+  --docs-path docs/ \
+  --version v0.100.0 -y
+```
+
+```bash Multiple Paths
+openground add numpy \
+  --source https://github.com/numpy/numpy.git \
+  --docs-path docs/ \
+  --docs-path tutorials/ \
+  --version v1.26.0 -y
+```
+
+```bash Entire Repository
+# Empty docs-path = entire repo
+openground add myproject \
+  --source https://github.com/user/project.git \
+  --version main -y
+```
+</CodeGroup>
+
+#### How It Works
+
+The git extractor (`extract/git.py`) uses **sparse checkout** for efficiency:
+
+```python
+# From extract/git.py:159-178
+# Clone with minimal depth and no checkout
+clone_cmd = [
+    "git", "clone",
+    "--depth", "1",              # Only latest commit
+    "--filter=blob:none",        # Defer blob downloads
+    "--no-checkout",             # Don't extract files yet
+    "--branch", ref_to_checkout,
+    repo_url,
+    str(temp_path),
+]
+
+# Configure sparse checkout for specific paths
+subprocess.run(["git", "sparse-checkout", "init", "--cone"])
+subprocess.run(["git", "sparse-checkout", "set"] + git_docs_paths)
+
+# Now checkout only the specified paths
+subprocess.run(["git", "checkout"])
+```
+
+<Info>
+**Sparse checkout** downloads only the documentation directories you need, not the entire repository. This is much faster for large repos.
+</Info>
+
+#### Version Resolution
+
+OpenGround intelligently resolves git refs (from `extract/git.py:80-119`):
+
+```python
+def resolve_remote_ref(repo_url: str, version: str) -> str | None:
+    """Check if a ref (tag or branch) exists on the remote.
+    Handles 'v' prefix variants for tags."""
+    
+    # Get all remote refs
+    result = subprocess.run(
+        ["git", "ls-remote", "--refs", repo_url],
+        capture_output=True, text=True
+    )
+    
+    # Check exact match
+    if version in remote_refs:
+        return version
+    
+    # Check variants (v1.0.0 ↔ 1.0.0)
+    if version.startswith("v"):
+        variants = [version[1:]]  # Try without 'v'
+    else:
+        variants = [f"v{version}"]  # Try with 'v'
+    
+    for variant in variants:
+        if variant in remote_refs:
+            return variant
+```
+
+<Tip>
+You can use `v1.0.0` or `1.0.0` - OpenGround will find the correct tag automatically.
+</Tip>
+
+#### Supported File Types
+
+From `extract/common.py:36-38`, git extraction supports:
+
+```python
+allowed_extensions = {".md", ".rst", ".txt", ".mdx", ".ipynb", ".html", ".htm"}
+```
+
+The extractor automatically:
+- Parses YAML front matter in Markdown/MDX
+- Extracts cells from Jupyter notebooks
+- Converts HTML to Markdown using Trafilatura
+- Skips build artifacts (`node_modules`, `__pycache__`, `.git`)
+
+#### URL Generation
+
+Each extracted file gets a web URL for reference (from `extract/git.py:268-270`):
+
+```python
+def make_git_url(file_path: Path) -> str:
+    relative_path = file_path.relative_to(temp_path)
+    # Example: https://github.com/owner/repo/tree/main/docs/tutorial.md
+    return f"{base_web_url}/{relative_path}"
+```
+
+### Sitemaps
+
+Extract documentation from websites that provide a sitemap.xml.
+
+<CodeGroup>
+```bash Basic Usage
+openground add openai \
+  --source https://platform.openai.com/sitemap.xml \
+  --filter-keyword docs \
+  -y
+```
+
+```bash Multiple Filters
+openground add mysite \
+  --source https://docs.example.com/sitemap.xml \
+  --filter-keyword api \
+  --filter-keyword guide \
+  --filter-keyword tutorial \
+  -y
+```
+
+```bash Trim Query Params
+# Remove ?page=1, ?ref=home, etc. from URLs
+openground add mysite \
+  --source https://docs.example.com/sitemap.xml \
+  --trim-query-params \
+  -y
+```
+</CodeGroup>
+
+#### How It Works
+
+The sitemap extractor (`extract/sitemap.py`) fetches and processes web pages:
+
+<Steps>
+  <Step title="Fetch Sitemap">
+    ```python
+    # From extract/sitemap.py:23-46
+    async with session.get(url) as response:
+        content = await response.text()
+    
+    root = ET.fromstring(content)
+    namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    
+    # Extract all <loc> URLs
+    urls = {
+        loc.text
+        for loc in root.findall(".//ns:loc", namespaces=namespace)
+        if loc.text
+    }
+    
+    # Filter by keywords (case-insensitive)
+    if keywords:
+        urls = {u for u in urls if any(k in u.lower() for k in keywords)}
+    ```
+  </Step>
+  
+  <Step title="Check robots.txt">
+    ```python
+    # From extract/sitemap.py:50-78
+    robot_parser = await fetch_robots_txt(session, base_url)
+    allowed_urls = {
+        url for url in urls 
+        if robot_parser.can_fetch("*", url)
+    }
+    ```
+    
+    OpenGround respects robots.txt and only crawls allowed URLs.
+  </Step>
+  
+  <Step title="Process Pages Concurrently">
+    ```python
+    # From extract/sitemap.py:207-221
+    semaphore = asyncio.Semaphore(concurrency_limit)  # Default: 50
+    
+    tasks = [
+        process_url(semaphore, session, url, library_name, version) 
+        for url in urls
+    ]
+    
+    results = await asyncio.gather(*tasks)
+    ```
+    
+    Downloads and processes up to 50 pages concurrently for speed.
+  </Step>
+  
+  <Step title="Extract Content">
+    ```python
+    # From extract/sitemap.py:119-139
+    import trafilatura
+    
+    metadata = trafilatura.extract_metadata(html)
+    content = trafilatura.extract(
+        html,
+        include_formatting=True,
+        include_links=True,
+        include_images=True,
+        output_format="markdown"
+    )
+    ```
+    
+    Trafilatura extracts clean content, removing navigation, ads, etc.
+  </Step>
+</Steps>
+
+<Warning>
+Some sites use client-side rendering (React, Vue, Next.js) which requires JavaScript. OpenGround will detect this and skip those pages. Use the git source type instead for such documentation.
+</Warning>
+
+#### JavaScript Detection
+
+From `extract/sitemap.py:141-156`, OpenGround warns about JS-required pages:
+
+```python
+if not content:
+    js_indicators = [
+        "BAILOUT_TO_CLIENT_SIDE_RENDERING",
+        "_next/static",
+        'id="root"',
+        'id="app"',
+        'id="__next"',
+        "You need to enable JavaScript",
+    ]
+    if any(indicator in html for indicator in js_indicators):
+        print(f"Warning: Page likely requires JavaScript: {url}")
+```
+
+### Local Paths
+
+Extract documentation from directories on your file system.
+
+<CodeGroup>
+```bash Absolute Path
+openground add myproject \
+  --source /home/user/projects/myproject/docs \
+  -y
+```
+
+```bash Home Directory
+openground add myproject \
+  --source ~/projects/myproject/docs \
+  -y
+```
+
+```bash Relative Path
+# From current working directory
+openground add myproject \
+  --source ./docs \
+  -y
+
+openground add myproject \
+  --source ../other-project/docs \
+  -y
+```
+</CodeGroup>
+
+#### How It Works
+
+The local path extractor (`extract/local_path.py`) is the simplest:
+
+```python
+# From extract/local_path.py:18-70
+async def extract_local_path(
+    local_path: Path,
+    output_dir: Path,
+    library_name: str,
+    version: str,
+) -> None:
+    # Expand ~ and resolve to absolute path
+    local_path = local_path.expanduser().resolve()
+    
+    # Validate path exists and is a directory
+    if not local_path.exists():
+        error(f"Path does not exist: {local_path}")
+        return
+    
+    # Find all documentation files
+    doc_files = filter_documentation_files(local_path)
+    
+    # Process files and save
+    results = await process_documentation_files(
+        doc_files=doc_files,
+        url_generator=lambda p: f"file://{p}",
+        library_name=library_name,
+        version=version,
+        default_description=f"Documentation file from {local_path}",
+        base_path=local_path,
+    )
+    
+    await save_results(results, output_dir)
+```
+
+<Info>
+Local paths use `file://` URLs for references. Perfect for work-in-progress documentation or private codebases.
+</Info>
+
+#### Version Naming
+
+For local paths, OpenGround generates a version string automatically:
+
+```bash
+# Default version: "local-YYYY-MM-DD"
+openground add myproject --source ./docs -y
+# Creates version: "local-2025-02-28"
+
+# Or specify custom version:
+openground add myproject --source ./docs --version dev -y
+```
+
+## Source Configuration Files
+
+OpenGround remembers source configurations so you can update libraries without re-specifying URLs.
+
+### Sources File Locations
+
+From `config.py:35-37`, there are two sources files:
+
+```python
+# User's personal sources (shared across projects)
+USER_SOURCE_FILE = Path.home() / ".openground" / "sources.json"
+
+# Project-local sources (project-specific overrides)
+PROJECT_SOURCE_FILE = Path(".openground") / "sources.json"
+```
+
+### Priority Order
+
+From `extract/source.py:109-161`, OpenGround checks sources in order:
+
+<Steps>
+  <Step title="Custom Path">
+    If you specify `--sources-file /path/to/sources.json`, use that.
+  </Step>
+  
+  <Step title="Project-Local">
+    Check `.openground/sources.json` in current directory.
+    
+    Allows project-specific configurations to override user defaults.
+  </Step>
+  
+  <Step title="User Sources">
+    Check `~/.openground/sources.json`.
+    
+    Shared across all your projects.
+  </Step>
+  
+  <Step title="Package Bundled">
+    Fall back to bundled sources (if any).
+  </Step>
+</Steps>
+
+### Sources File Format
+
+From the README example (lines 149-162):
+
+```json
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi",
+    "docs_paths": ["docs"]
+  },
+  "numpy": {
+    "type": "sitemap",
+    "sitemap_url": "https://numpy.org/doc/sitemap.xml",
+    "filter_keywords": ["docs/"]
+  },
+  "myproject": {
+    "type": "local_path",
+    "local_path": "/home/user/projects/myproject/docs"
+  }
+}
+```
+
+### Auto-Save Behavior
+
+From `extract/source.py:58-89`, OpenGround automatically saves sources:
+
+```python
+def save_source_to_sources(library_name: str, config: LibrarySource) -> None:
+    """Save to both project-local and user sources files."""
+    
+    # Save to .openground/sources.json (project-local)
+    _save_to_file(PROJECT_SOURCE_FILE)
+    
+    # Save to ~/.openground/sources.json (user)
+    _save_to_file(USER_SOURCE_FILE)
+```
+
+When you run:
+
+```bash
+openground add fastapi --source https://github.com/tiangolo/fastapi.git --docs-path docs/
+```
+
+OpenGround saves the configuration. Later, you can update without re-specifying:
+
+```bash
+# Just the name - OpenGround finds the source config
+openground update fastapi --version v0.110.0
+```
+
+<Tip>
+To disable auto-save:
+```bash
+openground config set sources.auto_add_local false
+```
+</Tip>
+
+## File Processing Pipeline
+
+All source types share a common file processing pipeline (from `extract/common.py:145-227`):
+
+<Steps>
+  <Step title="Filter Files">
+    ```python
+    def filter_documentation_files(
+        docs_dir: Path, 
+        allowed_extensions: set[str] | None = None
+    ) -> list[Path]:
+        # Default extensions
+        if allowed_extensions is None:
+            allowed_extensions = {
+                ".md", ".rst", ".txt", ".mdx", 
+                ".ipynb", ".html", ".htm"
+            }
+        
+        # Skip non-doc directories
+        skip_dirs = {
+            "node_modules", "__pycache__", ".git",
+            "images", "img", "assets", "static",
+            "_build", "build", "dist", ".venv"
+        }
+    ```
+  </Step>
+  
+  <Step title="Extract Content">
+    Different handlers for each file type:
+    
+    - **Markdown/MDX/RST**: Parse YAML front matter
+    - **Jupyter**: Extract markdown + code cells
+    - **HTML**: Use Trafilatura for content extraction
+  </Step>
+  
+  <Step title="Generate Metadata">
+    ```python
+    # Title from front matter or filename
+    title = metadata.get("title") or \
+            file_path.stem.replace("-", " ").title()
+    
+    # Description from metadata or path
+    description = metadata.get("description") or \
+                  f"Documentation file from {relative_path}"
+    ```
+  </Step>
+  
+  <Step title="Create ParsedPage">
+    ```python
+    ParsedPage(
+        url=file_url,
+        library_name=library_name,
+        version=version,
+        title=title,
+        description=description,
+        last_modified=None,
+        content=content,
+    )
+    ```
+  </Step>
+</Steps>
+
+## Raw Data Storage
+
+Extracted pages are saved as JSON files before embedding (from `extract/common.py:230-258`):
+
+```python
+async def save_results(results: list[ParsedPage], output_dir: Path):
+    # Clear existing files
+    if output_dir.exists():
+        for item in output_dir.iterdir():
+            item.unlink() if item.is_file() else shutil.rmtree(item)
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save each page as JSON
+    for result in results:
+        slug = urlparse(result["url"]).path.strip("/").replace("/", "-") or "home"
+        file_name = output_dir / f"{slug}.json"
+        with open(file_name, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+```
+
+Default location from `config.py:41-52`:
+
+```python
+DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
+
+def get_library_raw_data_dir(library_name: str, version: str) -> Path:
+    # ~/.local/share/openground/raw_data/{library}/{version}/
+    return raw_data_dir_base / library_name.lower() / version
+```
+
+Example structure:
+
+```
+~/.local/share/openground/raw_data/
+├── fastapi/
+│   ├── v0.100.0/
+│   │   ├── home.json
+│   │   ├── tutorial-first-steps.json
+│   │   └── advanced-dependencies.json
+│   └── latest/
+│       └── ...
+└── numpy/
+    └── v1.26.0/
+        └── ...
+```
+
+## Incremental Updates
+
+OpenGround supports efficient updates by detecting changed content (from `extract/common.py:260-289`):
+
+```python
+def load_page_hashes_from_directory(directory: Path) -> dict[str, str]:
+    """Load pages and compute hashes without full ParsedPage objects."""
+    import hashlib
+    
+    hashes: dict[str, str] = {}
+    for json_file in directory.glob("*.json"):
+        data = json.load(f)
+        url = data.get("url")
+        content = data.get("content", "")
+        if url:
+            hashes[url] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    
+    return hashes
+```
+
+The `update` command uses this to:
+1. Fetch new documentation
+2. Hash each page's content
+3. Compare with existing hashes
+4. Only re-embed changed pages
+
+See the [Update Guide](/guides/update) for details.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Embeddings" icon="brain" href="/concepts/embeddings">
+    Learn how OpenGround converts text to vector embeddings
+  </Card>
+  <Card title="Search" icon="magnifying-glass" href="/concepts/search">
+    Understand hybrid search with vector similarity and BM25
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    See how sources fit into the overall architecture
+  </Card>
+  <Card title="Add Documentation" icon="plus" href="/guides/add-documentation">
+    Step-by-step guide to adding your first library
+  </Card>
+</CardGroup>

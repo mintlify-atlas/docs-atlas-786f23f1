@@ -1,0 +1,523 @@
+---
+title: Configuration
+description: Configure the OpenGround MCP server for optimal performance
+---
+
+## Overview
+
+The OpenGround MCP server can be customized through configuration files, environment variables, and runtime settings. This guide covers all configuration options and best practices.
+
+## Configuration File
+
+### Location
+
+OpenGround uses a JSON configuration file located at:
+
+**Linux/macOS:**
+```
+~/.config/openground/config.json
+```
+
+**Windows:**
+```
+%LOCALAPPDATA%\openground\config.json
+```
+
+**Custom location (via XDG_CONFIG_HOME):**
+```
+$XDG_CONFIG_HOME/openground/config.json
+```
+
+### Structure
+
+```json
+{
+  "db_path": "/path/to/lancedb",
+  "table_name": "documents",
+  "raw_data_dir": "/path/to/raw_data",
+  "extraction": {
+    "concurrency_limit": 50
+  },
+  "embeddings": {
+    "batch_size": 32,
+    "chunk_size": 800,
+    "chunk_overlap": 200,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "embedding_dimensions": 384,
+    "embedding_backend": "fastembed"
+  },
+  "query": {
+    "top_k": 5
+  },
+  "sources": {
+    "auto_add_local": true
+  }
+}
+```
+
+### Configuration Options
+
+#### Database Settings
+
+<ParamField path="db_path" type="string" default="~/.local/share/openground/lancedb">
+  Path to the LanceDB database directory. All documentation vectors and metadata are stored here.
+  
+  **Example:** `"/Users/john/.local/share/openground/lancedb"`
+</ParamField>
+
+<ParamField path="table_name" type="string" default="documents">
+  Name of the LanceDB table containing documentation chunks.
+  
+  **Example:** `"documents"`, `"docs_v2"`
+</ParamField>
+
+<ParamField path="raw_data_dir" type="string" default="~/.local/share/openground/raw_data">
+  Base directory for storing raw downloaded documentation HTML/markdown files.
+  
+  **Example:** `"/Users/john/.local/share/openground/raw_data"`
+</ParamField>
+
+#### Extraction Settings
+
+<ParamField path="extraction.concurrency_limit" type="integer" default="50">
+  Maximum number of concurrent HTTP requests when downloading documentation.
+  
+  **Range:** 1-200  
+  **Recommended:** 20-100 depending on network bandwidth
+</ParamField>
+
+#### Embedding Settings
+
+<ParamField path="embeddings.batch_size" type="integer" default="32">
+  Number of text chunks to process in a single embedding batch.
+  
+  **Range:** 1-128  
+  **Memory impact:** Higher = more memory usage  
+  **Speed impact:** Higher = faster processing
+</ParamField>
+
+<ParamField path="embeddings.chunk_size" type="integer" default="800">
+  Maximum number of characters per documentation chunk.
+  
+  **Range:** 200-2000  
+  **Recommended:** 600-1000 for balanced context
+</ParamField>
+
+<ParamField path="embeddings.chunk_overlap" type="integer" default="200">
+  Number of overlapping characters between adjacent chunks.
+  
+  **Range:** 0-500  
+  **Purpose:** Ensures context continuity across chunk boundaries
+</ParamField>
+
+<ParamField path="embeddings.embedding_model" type="string" default="BAAI/bge-small-en-v1.5">
+  Hugging Face model identifier for generating embeddings.
+  
+  **Popular options:**
+  - `"BAAI/bge-small-en-v1.5"` - Fast, 384 dimensions (default)
+  - `"BAAI/bge-base-en-v1.5"` - Balanced, 768 dimensions
+  - `"BAAI/bge-large-en-v1.5"` - Highest quality, 1024 dimensions
+</ParamField>
+
+<ParamField path="embeddings.embedding_dimensions" type="integer" default="384">
+  Dimensionality of the embedding vectors. Must match the model's output dimension.
+  
+  **Model dimensions:**
+  - BGE-small: 384
+  - BGE-base: 768
+  - BGE-large: 1024
+</ParamField>
+
+<ParamField path="embeddings.embedding_backend" type="string" default="fastembed">
+  Backend library for generating embeddings.
+  
+  **Options:**
+  - `"fastembed"` - Fast, optimized for CPU (default)
+  - `"sentence-transformers"` - More models, GPU support
+</ParamField>
+
+#### Query Settings
+
+<ParamField path="query.top_k" type="integer" default="5">
+  Number of search results returned by `search_documents_tool`.
+  
+  **Range:** 1-100  
+  **Recommended:** 3-10 for most use cases
+</ParamField>
+
+#### Source Settings
+
+<ParamField path="sources.auto_add_local" type="boolean" default="true">
+  Automatically detect and add project-local source definitions.
+  
+  **Purpose:** Enables project-specific documentation sources via `.openground/sources.json`
+</ParamField>
+
+## Environment Variables
+
+### System Environment
+
+These environment variables are set automatically by the MCP server at startup:
+
+<ParamField path="TOKENIZERS_PARALLELISM" type="string" default="false">
+  Disables tokenizer parallelism to prevent stdout pollution.
+  
+  **Purpose:** Ensures clean JSON-RPC communication with MCP clients
+</ParamField>
+
+<ParamField path="TRANSFORMERS_VERBOSITY" type="string" default="error">
+  Reduces transformers library logging to errors only.
+  
+  **Purpose:** Prevents debug logs from interfering with MCP protocol
+</ParamField>
+
+<ParamField path="FAST_EMBED_IGNORE_TRANSFORMERS_LOGS" type="string" default="1">
+  Suppresses fastembed transformers logging.
+  
+  **Purpose:** Clean server output
+</ParamField>
+
+### User Environment Variables
+
+You can set these before running the MCP server:
+
+<ParamField path="XDG_CONFIG_HOME" type="string">
+  Overrides the default config directory location.
+  
+  **Example:** `export XDG_CONFIG_HOME=/custom/config`  
+  **Result:** Config file at `/custom/config/openground/config.json`
+</ParamField>
+
+<ParamField path="XDG_DATA_HOME" type="string">
+  Overrides the default data directory location.
+  
+  **Example:** `export XDG_DATA_HOME=/custom/data`  
+  **Result:** Database at `/custom/data/openground/lancedb`
+</ParamField>
+
+## MCP Server Configuration
+
+### FastMCP Settings
+
+The server is built using FastMCP with these settings:
+
+```python
+mcp = FastMCP(
+    "openground Documentation Search",
+    instructions="""openground gives you access to official documentation for various libraries and frameworks. 
+    
+    CRITICAL RULES:
+    1. Whenever a user asks about specific libraries or frameworks, you MUST first check if official documentation is available using this server.
+    2. Do NOT rely on your internal training data for syntax or API details if you can verify them here.
+    3. Always start by listing or searching available libraries to confirm coverage.
+    4. If the library exists, use `search_documents_tool` to find the answer.""",
+)
+```
+
+### Server Startup Process
+
+1. **Environment setup**: Set silence environment variables
+2. **Background initialization**: Start daemon thread to pre-load resources
+3. **Cache warming**: Load library metadata and embedding model
+4. **MCP transport**: Initialize stdio transport
+5. **Ready signal**: Log "Server is fully ready" message
+
+### Pre-loading Behavior
+
+The server pre-loads resources in a background thread:
+
+```python
+def _pre_load_resources():
+    # 1. Load configuration
+    config = _get_config()
+    
+    # 2. Warm up metadata cache
+    list_libraries_with_versions(db_path, table_name)
+    
+    # 3. Pre-load embedding model
+    generate_embeddings(["warmup"], show_progress=False)
+```
+
+**Benefits:**
+- First tool call is instant (no cold start)
+- Embedding model is in memory
+- Library metadata is cached
+
+**Startup time:** 0.5-3 seconds depending on:
+- Number of libraries in database
+- Embedding model size
+- Disk I/O speed
+
+## Managing Configuration
+
+### View Current Config
+
+```bash
+openground config show
+```
+
+### Set Individual Values
+
+```bash
+# Set top_k for search results
+openground config set query.top_k 10
+
+# Set chunk size for embeddings
+openground config set embeddings.chunk_size 1000
+
+# Set database path
+openground config set db_path /custom/path/to/lancedb
+```
+
+### Reset to Defaults
+
+```bash
+openground config reset
+```
+
+### Edit Manually
+
+```bash
+# Open config file in editor
+vim ~/.config/openground/config.json
+
+# Validate changes (run this after editing)
+openground config show
+```
+
+## Performance Tuning
+
+### For Fast Search (Low Latency)
+
+```json
+{
+  "embeddings": {
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "embedding_dimensions": 384,
+    "embedding_backend": "fastembed"
+  },
+  "query": {
+    "top_k": 5
+  }
+}
+```
+
+**Characteristics:**
+- Search: < 100ms
+- Model size: ~90MB
+- Memory usage: ~200MB
+
+### For High Accuracy (Better Results)
+
+```json
+{
+  "embeddings": {
+    "embedding_model": "BAAI/bge-large-en-v1.5",
+    "embedding_dimensions": 1024,
+    "embedding_backend": "sentence-transformers"
+  },
+  "query": {
+    "top_k": 10
+  }
+}
+```
+
+**Characteristics:**
+- Search: 200-500ms
+- Model size: ~1.3GB
+- Memory usage: ~2GB
+- Better semantic understanding
+
+### For Large Documentation Sets
+
+```json
+{
+  "extraction": {
+    "concurrency_limit": 100
+  },
+  "embeddings": {
+    "batch_size": 64,
+    "chunk_size": 600,
+    "chunk_overlap": 150
+  }
+}
+```
+
+**Characteristics:**
+- Faster ingestion
+- Smaller chunks = more granular search
+- Higher batch size = faster embedding
+
+### For Memory-Constrained Systems
+
+```json
+{
+  "embeddings": {
+    "batch_size": 16,
+    "embedding_model": "BAAI/bge-small-en-v1.5",
+    "embedding_backend": "fastembed"
+  },
+  "extraction": {
+    "concurrency_limit": 20
+  }
+}
+```
+
+**Characteristics:**
+- Lower memory footprint
+- Slower processing
+- Still good search quality
+
+## Advanced Configuration
+
+### Custom Database Location
+
+Move database to SSD for better performance:
+
+```json
+{
+  "db_path": "/mnt/ssd/openground/lancedb",
+  "raw_data_dir": "/mnt/hdd/openground/raw_data"
+}
+```
+
+### Multiple Environments
+
+Use different configs for development vs. production:
+
+**Development:**
+```bash
+export XDG_CONFIG_HOME=~/.config-dev
+openground config set query.top_k 3
+```
+
+**Production:**
+```bash
+export XDG_CONFIG_HOME=~/.config-prod
+openground config set query.top_k 10
+```
+
+### Project-Local Sources
+
+Create project-specific documentation sources:
+
+```bash
+# In your project directory
+mkdir -p .openground
+```
+
+**`.openground/sources.json`:**
+```json
+{
+  "my-internal-api": {
+    "latest": {
+      "type": "sitemap",
+      "url": "https://internal-docs.company.com/sitemap.xml"
+    }
+  }
+}
+```
+
+With `sources.auto_add_local: true`, this source is automatically available when working in this directory.
+
+## Troubleshooting
+
+### Config File Not Found
+
+**Symptom:** Server uses all defaults
+
+**Solution:** Create config file:
+```bash
+mkdir -p ~/.config/openground
+openground config reset  # Creates default config
+```
+
+### Invalid JSON
+
+**Error:** `Invalid JSON in config file`
+
+**Solution:** Validate JSON syntax:
+```bash
+python -m json.tool ~/.config/openground/config.json
+```
+
+Or reset:
+```bash
+openground config reset
+```
+
+### Changes Not Taking Effect
+
+**Symptom:** Modified config but server still uses old values
+
+**Solution:** Configuration is cached at server startup. Restart your MCP client to reload the server with new config.
+
+### Database Path Issues
+
+**Error:** `Database not found` or `Table doesn't exist`
+
+**Solution:** Verify paths are correct and accessible:
+```bash
+ls -la ~/.local/share/openground/lancedb/
+
+# If empty, add libraries
+openground add fastapi
+```
+
+### Embedding Model Download Fails
+
+**Symptom:** Server hangs or errors during initialization
+
+**Solution:**
+1. Check internet connection
+2. Manually download model:
+   ```bash
+   python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
+   ```
+3. Use alternative model:
+   ```bash
+   openground config set embeddings.embedding_model "sentence-transformers/all-MiniLM-L6-v2"
+   ```
+
+## Best Practices
+
+<Tip>
+**Start with defaults, tune incrementally:**
+
+1. Use default config initially
+2. Monitor search quality and performance
+3. Adjust one parameter at a time
+4. Measure impact before further changes
+</Tip>
+
+<Warning>
+**Don't change embedding model after ingesting libraries:**
+
+Changing `embedding_model` or `embedding_dimensions` after libraries are added will cause search to fail. If you need to change these:
+
+1. Export your library list: `openground list > libraries.txt`
+2. Delete database: `rm -rf ~/.local/share/openground/lancedb`
+3. Update config
+4. Re-add all libraries
+</Warning>
+
+### Configuration Checklist
+
+- [ ] Config file is valid JSON
+- [ ] `db_path` points to accessible directory
+- [ ] `embedding_dimensions` matches `embedding_model`
+- [ ] `chunk_size` > `chunk_overlap`
+- [ ] `top_k` is reasonable (3-20)
+- [ ] `concurrency_limit` doesn't overwhelm network
+- [ ] Environment variables don't conflict
+- [ ] Server restarts after config changes
+
+## Next Steps
+
+<Card title="Search Documents" icon="search" href="/mcp/search-documents">
+  Learn how to effectively search documentation with your configured server
+</Card>
+
+<Card title="List Libraries" icon="list" href="/mcp/list-libraries">
+  Understand available libraries and versions
+</Card>

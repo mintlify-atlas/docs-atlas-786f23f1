@@ -1,0 +1,428 @@
+---
+title: Managing Libraries
+description: List, remove, and view statistics for your documentation libraries
+---
+
+OpenGround provides commands to manage your indexed documentation libraries, including listing available libraries, viewing statistics, and removing libraries you no longer need.
+
+## List Libraries
+
+View all libraries stored in your LanceDB database:
+
+```bash
+openground list-libraries
+```
+
+Alias: `openground ls`
+
+### Output Format
+
+Results are displayed in a formatted table:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Available Libraries                                         │
+├──────────────┬──────────────────────────────────────────────┤
+│ Library      │ Versions                                     │
+├──────────────┼──────────────────────────────────────────────┤
+│ nextjs       │ latest, v13.0.0, v14.0.0                     │
+│ openground   │ latest                                       │
+│ react        │ latest, v18.0.0, v18.2.0                     │
+└──────────────┴──────────────────────────────────────────────┘
+```
+
+<Info>
+  This shows libraries that have been embedded into LanceDB. To see raw extracted data, use `openground list-raw-libraries`.
+</Info>
+
+## List Raw Libraries
+
+View libraries in the raw data directory (extracted but possibly not yet embedded):
+
+```bash
+openground list-raw-libraries
+```
+
+### Output Format
+
+```
+Available libraries in raw_data:
+nextjs: latest, v13.0.0, v14.0.0
+openground: latest
+react: latest, v18.0.0
+```
+
+<Accordion title="What's the difference between list-libraries and list-raw-libraries?">
+  - `list-libraries`: Shows libraries in **LanceDB** (embedded and searchable)
+  - `list-raw-libraries`: Shows libraries in **raw_data** directory (extracted JSON files)
+  
+  Normally these match, but they can differ if:
+  - Extraction completed but embedding was interrupted
+  - You manually deleted the database
+  - Embedding is in progress
+</Accordion>
+
+## Programmatic Library Listing
+
+List libraries from Python code:
+
+```python
+from pathlib import Path
+from openground.query import list_libraries, list_libraries_with_versions
+
+# Get list of library names
+db_path = Path.home() / ".local/share/openground/lancedb"
+libraries = list_libraries(db_path=db_path, table_name="documents")
+print(libraries)  # ['nextjs', 'openground', 'react']
+
+# Get libraries with versions
+libs_with_versions = list_libraries_with_versions(
+    db_path=db_path,
+    table_name="documents"
+)
+print(libs_with_versions)
+# {
+#   'nextjs': ['latest', 'v13.0.0', 'v14.0.0'],
+#   'openground': ['latest'],
+#   'react': ['latest', 'v18.0.0', 'v18.2.0']
+# }
+
+# Search libraries by name
+libs_with_versions = list_libraries_with_versions(
+    db_path=db_path,
+    table_name="documents",
+    search_term="next"  # Case-insensitive search
+)
+print(libs_with_versions)  # {'nextjs': ['latest', 'v13.0.0', 'v14.0.0']}
+```
+
+## Remove Libraries
+
+Delete a library version from LanceDB:
+
+```bash
+openground remove <library-name> --version <version>
+```
+
+Alias: `openground rm`
+
+### Remove Options
+
+<ParamField path="library_name" type="string" required>
+  Name of the library to remove
+</ParamField>
+
+<ParamField path="--version" type="string" required>
+  Version of the library to remove
+</ParamField>
+
+<ParamField path="--yes" type="boolean">
+  Skip confirmation prompts
+</ParamField>
+
+### Remove Examples
+
+```bash
+# Remove with confirmation
+openground remove react --version v18.0.0
+
+# Remove without confirmation
+openground rm nextjs --version latest --yes
+```
+
+### Confirmation Dialog
+
+By default, OpenGround shows library details and asks for confirmation:
+
+```
+Library: react
+Version: v18.0.0
+  Chunks: 1250
+  Pages:  180
+  Sample titles: Getting Started, Hooks API Reference, Component API Reference
+
+Are you sure you want to delete this library version? [y/N]: y
+
+Deleted 1250 chunks for library 'react' version 'v18.0.0'.
+
+Also delete raw files at ~/.local/share/openground/raw_data/react/v18.0.0? [y/N]: y
+Deleted raw library files at ~/.local/share/openground/raw_data/react/v18.0.0.
+```
+
+<Warning>
+  Removing a library is **permanent** and cannot be undone. You'll need to re-extract and re-embed the library to restore it.
+</Warning>
+
+## Library Statistics
+
+Get detailed statistics for a specific library version:
+
+```python
+from pathlib import Path
+from openground.query import get_library_stats
+
+stats = get_library_stats(
+    library_name="react",
+    version="latest",
+    db_path=Path.home() / ".local/share/openground/lancedb",
+    table_name="documents"
+)
+
+if stats:
+    print(f"Library: {stats['library_name']}")
+    print(f"Version: {stats['version']}")
+    print(f"Chunks: {stats['chunk_count']}")
+    print(f"Pages: {stats['unique_urls']}")
+    print(f"Sample titles: {', '.join(stats['titles'])}")
+else:
+    print("Library not found")
+```
+
+### Stats Output
+
+```python
+{
+    'library_name': 'react',
+    'version': 'latest',
+    'chunk_count': 1250,      # Total chunks in LanceDB
+    'unique_urls': 180,       # Number of unique pages
+    'titles': [               # Sample page titles (up to 5)
+        'Getting Started',
+        'Hooks API Reference',
+        'Component API Reference',
+        'React Router Guide',
+        'Performance Optimization'
+    ]
+}
+```
+
+## Global Statistics
+
+View overall OpenGround statistics:
+
+```bash
+openground stats show
+```
+
+### Stats Output
+
+```
+Openground Statistics
+==================================================
+Libraries: 3
+Total chunks: 2580
+
+Tool calls:
+  get_full_content: 45
+  list_libraries: 12
+  search: 89
+```
+
+<Accordion title="What are tool calls?">
+  Tool calls are tracked when using OpenGround through MCP (Model Context Protocol) integration with AI editors like Claude Code, Cursor, or OpenCode. Each time the AI uses an OpenGround tool, it's counted here.
+</Accordion>
+
+## Reset Statistics
+
+Clear tool call statistics:
+
+```bash
+openground stats reset
+
+# Skip confirmation
+openground stats reset --yes
+```
+
+<Warning>
+  This only resets tool call counts, not library data. Your libraries and embeddings remain intact.
+</Warning>
+
+## Delete All Data
+
+OpenGround provides `nuke` commands to delete data:
+
+### Delete Everything
+
+Delete both raw data and embeddings:
+
+```bash
+openground nuke all
+```
+
+### Delete Only Raw Data
+
+Delete extracted JSON files but keep embeddings:
+
+```bash
+openground nuke raw_data
+```
+
+### Delete Only Embeddings
+
+Delete LanceDB but keep raw extracted files:
+
+```bash
+openground nuke embeddings
+```
+
+### Nuke Examples
+
+```bash
+# Show what will be deleted (confirmation required by default)
+openground nuke all
+
+# Delete without confirmation
+openground nuke all --yes
+
+# Delete only embeddings
+openground nuke embeddings --yes
+```
+
+### Nuke Confirmation
+
+The command shows a summary before deleting:
+
+```
+This will permanently delete ALL data:
+  • Raw data: 3 libraries in ~/.local/share/openground/raw_data
+  • Embeddings: 3 libraries in ~/.local/share/openground/lancedb
+
+Tip: Run 'openground list-raw-libraries' and 'openground list-libraries' 
+to see what will be deleted.
+
+Are you sure you want to delete ALL data? This cannot be undone! [y/N]:
+```
+
+<Warning>
+  **PERMANENT DELETION**: `nuke` commands permanently delete data and cannot be undone. Make sure you have backups or can re-extract your libraries.
+</Warning>
+
+<Accordion title="When should I use nuke commands?">
+  Use `nuke` commands when:
+  - Starting fresh with a new configuration
+  - Clearing disk space
+  - Switching embedding models (requires re-embedding)
+  - Troubleshooting database corruption
+  - Testing or development workflows
+  
+  **Do not use** if you want to keep your libraries and just update them (use `openground update` instead).
+</Accordion>
+
+## Programmatic Deletion
+
+Delete libraries from Python:
+
+```python
+from pathlib import Path
+from openground.query import delete_library, delete_urls
+
+# Delete entire library version
+db_path = Path.home() / ".local/share/openground/lancedb"
+deleted_count = delete_library(
+    library_name="react",
+    version="v18.0.0",
+    db_path=db_path,
+    table_name="documents"
+)
+print(f"Deleted {deleted_count} chunks")
+
+# Delete specific URLs
+deleted_count = delete_urls(
+    urls=[
+        "https://react.dev/learn/getting-started",
+        "https://react.dev/reference/hooks"
+    ],
+    library_name="react",
+    version="latest",
+    db_path=db_path,
+    table_name="documents"
+)
+print(f"Deleted {deleted_count} chunks")
+```
+
+## Storage Locations
+
+Understanding where data is stored:
+
+<Tabs>
+  <Tab title="Linux/macOS">
+    ```bash
+    # Raw data (extracted JSON)
+    ~/.local/share/openground/raw_data/
+    
+    # LanceDB embeddings
+    ~/.local/share/openground/lancedb/
+    
+    # Configuration
+    ~/.config/openground/config.json
+    
+    # User sources
+    ~/.openground/sources.json
+    ```
+  </Tab>
+  
+  <Tab title="Windows">
+    ```powershell
+    # Raw data (extracted JSON)
+    %LOCALAPPDATA%\openground\raw_data\
+    
+    # LanceDB embeddings
+    %LOCALAPPDATA%\openground\lancedb\
+    
+    # Configuration
+    %LOCALAPPDATA%\openground\config.json
+    
+    # User sources
+    %USERPROFILE%\.openground\sources.json
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  You can customize storage locations using the config file. See [Configuration](/usage/configuration) for details.
+</Tip>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Regular Cleanup" icon="broom">
+    Periodically remove old versions you no longer need:
+    ```bash
+    openground rm mylib --version v1.0.0 --yes
+    ```
+  </Card>
+  
+  <Card title="Version Management" icon="code-branch">
+    Keep only versions you actively use:
+    ```bash
+    # Keep latest and current production
+    openground ls
+    openground rm mylib --version v2.0.0
+    ```
+  </Card>
+  
+  <Card title="Monitor Disk Usage" icon="hard-drive">
+    Check storage usage regularly:
+    ```bash
+    du -sh ~/.local/share/openground
+    ```
+  </Card>
+  
+  <Card title="Backup Before Nuke" icon="database">
+    Back up important libraries before mass deletion:
+    ```bash
+    cp -r ~/.local/share/openground ~/backup/
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Querying" icon="magnifying-glass" href="/usage/querying">
+    Learn how to search your libraries
+  </Card>
+  <Card title="Updating" icon="rotate" href="/usage/updating">
+    Keep your libraries up-to-date
+  </Card>
+</CardGroup>
